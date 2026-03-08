@@ -12,8 +12,8 @@
     "nw-builder": "^3.5.0"
   },
   "scripts": {
-    "build:win": "npx nwbuild --platforms win64 --buildDir dist/win .",
-    "build:mac": "npx nwbuild --platforms osx64 --buildDir dist/mac .",
-    "build:linux": "npx nwbuild --platforms linux64 --buildDir dist/linux ."
+    "build:win": "npx nwbuild --platforms win64 --buildDir dist/win --version 0.109.0 .",
+    "build:mac": "npx nwbuild --platforms osx64 --buildDir dist/mac --version 0.109.0 .",
+    "build:linux": "npx nwbuild --platforms linux64 --buildDir dist/linux --version 0.109.0 ."
   }
 }
