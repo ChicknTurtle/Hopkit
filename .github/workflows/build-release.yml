@@ -1,0 +1,137 @@
+name: Build & Release Hopkit
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'package.json'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - platform: win
+            runs-on: windows-latest
+          - platform: mac
+            runs-on: macos-latest
+          - platform: linux
+            runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: get_version
+        run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build for ${{ matrix.platform }}
+        run: npm run build:${{ matrix.platform }}
+
+      - name: Package build into zip (non-Windows)
+        if: matrix.platform != 'win'
+        run: |
+          mkdir -p dist
+          zip -r "dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip" "dist/${{ matrix.platform }}" || (ls -la dist && false)
+
+      - name: Package build into zip (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $src = "dist\\win\\*"
+          $dst = "dist\\hopkit-win-v${env:VERSION}.zip"
+          if (Test-Path $src) {
+            Compress-Archive -Path $src -DestinationPath $dst -Force
+          } else {
+            Get-ChildItem -Path dist -Recurse | Format-List
+            exit 1
+          }
+
+      - name: Upload artifact (zip)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hopkit-${{ matrix.platform }}
+          path: dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (for version)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version (publish)
+        id: get_version_publish
+        run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hopkit-win
+          path: ./artifacts
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hopkit-mac
+          path: ./artifacts
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hopkit-linux
+          path: ./artifacts
+
+      - name: Create GitHub release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          release_name: Hopkit v${{ env.VERSION }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows build to release
+        if: always()
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./artifacts/hopkit-win/hopkit-win-v${{ env.VERSION }}.zip
+          asset_name: hopkit-win-v${{ env.VERSION }}.zip
+          asset_content_type: application/zip
+
+      - name: Upload macOS build to release
+        if: always()
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./artifacts/hopkit-mac/hopkit-mac-v${{ env.VERSION }}.zip
+          asset_name: hopkit-mac-v${{ env.VERSION }}.zip
+          asset_content_type: application/zip
+
+      - name: Upload Linux build to release
+        if: always()
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./artifacts/hopkit-linux/hopkit-linux-v${{ env.VERSION }}.zip
+          asset_name: hopkit-linux-v${{ env.VERSION }}.zip
+          asset_content_type: application/zip
