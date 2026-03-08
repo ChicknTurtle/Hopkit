@@ -53,6 +53,7 @@ jobs:
     needs: check
     if: ${{ needs.check.outputs.should_build == 'true' }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - platform: win
@@ -111,8 +112,8 @@ jobs:
           elif [ -d "build" ] && [ "$(ls -A build)" ]; then
             zip -r "dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip" "build"
           else
-            touch "dist/.placeholder"
-            zip -r "dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip" "dist" >/dev/null
+            echo "ERROR: No build output found for platform '${{ matrix.platform }}' (checked dist/${{ matrix.platform }}, dist, build/${{ matrix.platform }}, build). Aborting." >&2
+            exit 1
           fi
 
       - name: Package build into zip (Windows)
@@ -129,18 +130,31 @@ jobs:
             }
           }
           if (-not $selected) {
-            New-Item -ItemType Directory -Force -Path dist | Out-Null
-            New-Item -Item -Force -Path dist\\.placeholder | Out-Null
-            Compress-Archive -Path "dist\\*" -DestinationPath $dst -Force
+            Write-Error "ERROR: No build output found for Windows (checked: $($candidates -join ', ')). Aborting."
+            exit 1
           } else {
             Compress-Archive -Path "$selected\\*" -DestinationPath $dst -Force
           }
+
+      - name: Verify zip exists
+        run: |
+          ZIP="dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip"
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            echo "Skipping bash zip existence check on non-bash runner"
+          else
+            if [ ! -f "$ZIP" ]; then
+              echo "ERROR: expected zip $ZIP not found" >&2
+              ls -la dist || true
+              exit 1
+            fi
+          fi
 
       - name: Upload artifact (zip)
         uses: actions/upload-artifact@v4
         with:
           name: hopkit-${{ matrix.platform }}
-          path: dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip
+          path: |
+            dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip
 
   publish:
     name: Create release and upload assets
@@ -148,7 +162,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: ${{ needs.check.outputs.should_build == 'true' }}
+    if: ${{ always() }}
     steps:
       - name: Checkout (for version)
         uses: actions/checkout@v4
@@ -159,26 +173,63 @@ jobs:
         id: get_version_publish
         run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
 
-      - name: Download Windows artifact
+      - name: Download Windows artifact (best-effort)
+        id: download_win
         uses: actions/download-artifact@v4
         with:
           name: hopkit-win
-          path: ./artifacts
+          path: ./artifacts/hopkit-win
+        continue-on-error: true
 
-      - name: Download macOS artifact
+      - name: Download macOS artifact (best-effort)
+        id: download_mac
         uses: actions/download-artifact@v4
         with:
           name: hopkit-mac
-          path: ./artifacts
+          path: ./artifacts/hopkit-mac
+        continue-on-error: true
 
-      - name: Download Linux artifact
+      - name: Download Linux artifact (best-effort)
+        id: download_linux
         uses: actions/download-artifact@v4
         with:
           name: hopkit-linux
-          path: ./artifacts
+          path: ./artifacts/hopkit-linux
+        continue-on-error: true
+
+      - name: Collect downloaded artifacts
+        id: collect
+        run: |
+          set -e
+          VERSION=$(jq -r .version package.json)
+          FOUND=0
+          HAS_WIN=false
+          HAS_MAC=false
+          HAS_LINUX=false
+
+          if [ -f "./artifacts/hopkit-win/hopkit-win-v${VERSION}.zip" ]; then
+            FOUND=$((FOUND+1)); HAS_WIN=true
+          fi
+          if [ -f "./artifacts/hopkit-mac/hopkit-mac-v${VERSION}.zip" ]; then
+            FOUND=$((FOUND+1)); HAS_MAC=true
+          fi
+          if [ -f "./artifacts/hopkit-linux/hopkit-linux-v${VERSION}.zip" ]; then
+            FOUND=$((FOUND+1)); HAS_LINUX=true
+          fi
+
+          echo "found=$FOUND" >> $GITHUB_OUTPUT
+          echo "has_win=$HAS_WIN" >> $GITHUB_OUTPUT
+          echo "has_mac=$HAS_MAC" >> $GITHUB_OUTPUT
+          echo "has_linux=$HAS_LINUX" >> $GITHUB_OUTPUT
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "No artifacts found from build. Skipping release."
+            exit 0
+          fi
 
       - name: Create GitHub release
         id: create_release
+        if: ${{ fromJson(steps.collect.outputs.found) > 0 }}
         uses: actions/create-release@v1
         with:
           tag_name: v${{ env.VERSION }}
@@ -189,7 +240,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Windows build to release
-        if: always()
+        if: ${{ fromJson(steps.collect.outputs.has_win) == true && steps.create_release.outputs.upload_url != '' }}
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -198,7 +249,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload macOS build to release
-        if: always()
+        if: ${{ fromJson(steps.collect.outputs.has_mac) == true && steps.create_release.outputs.upload_url != '' }}
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -207,7 +258,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload Linux build to release
-        if: always()
+        if: ${{ fromJson(steps.collect.outputs.has_linux) == true && steps.create_release.outputs.upload_url != '' }}
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
