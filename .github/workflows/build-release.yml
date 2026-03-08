@@ -43,22 +43,40 @@ jobs:
       - name: Package build into zip (non-Windows)
         if: matrix.platform != 'win'
         run: |
+          set -e
           mkdir -p dist
-          zip -r "dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip" "dist/${{ matrix.platform }}" || (ls -la dist && false)
+          if [ -d "dist/${{ matrix.platform }}" ] && [ "$(ls -A dist/${{ matrix.platform }})" ]; then
+            zip -r "dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip" "dist/${{ matrix.platform }}"
+          elif [ -d "dist" ] && [ "$(ls -A dist)" ]; then
+            zip -r "dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip" "dist"
+          elif [ -d "build/${{ matrix.platform }}" ] && [ "$(ls -A build/${{ matrix.platform }})" ]; then
+            zip -r "dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip" "build/${{ matrix.platform }}"
+          elif [ -d "build" ] && [ "$(ls -A build)" ]; then
+            zip -r "dist/hopkit-${{ matrix.platform }}-v${{ env.VERSION }}.zip" "build"
+          else
+            echo "No build output found (checked: dist/${{ matrix.platform }}, dist, build/${{ matrix.platform }}, build)"
+            exit 1
+          fi
 
       - name: Package build into zip (Windows)
         if: matrix.platform == 'win'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $src = "dist\\win\\*"
+          $candidates = @("dist\\win","dist","build\\win","build")
           $dst = "dist\\hopkit-win-v${env:VERSION}.zip"
-          if (Test-Path $src) {
-            Compress-Archive -Path $src -DestinationPath $dst -Force
-          } else {
-            Get-ChildItem -Path dist -Recurse | Format-List
+          $selected = $null
+          foreach ($c in $candidates) {
+            if (Test-Path $c -PathType Container -and (Get-ChildItem $c -Recurse | Measure-Object).Count -gt 0) {
+              $selected = $c
+              break
+            }
+          }
+          if (-not $selected) {
+            Write-Error "No build output found. Checked: $($candidates -join ', ')"
             exit 1
           }
+          Compress-Archive -Path "$selected\\*" -DestinationPath $dst -Force
 
       - name: Upload artifact (zip)
         uses: actions/upload-artifact@v4
