@@ -7,5 +7,13 @@
     "width": 960,
     "height": 720
   },
-  "chromium-args": ""
+  "chromium-args": "",
+  "devDependencies": {
+    "nw-builder": "^3.5.0"
+  },
+  "scripts": {
+    "build:win": "npx nwbuild --platforms win64 --buildDir dist/win .",
+    "build:mac": "npx nwbuild --platforms osx64 --buildDir dist/mac .",
+    "build:linux": "npx nwbuild --platforms linux64 --buildDir dist/linux ."
+  }
 }
