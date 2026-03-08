@@ -123,7 +123,7 @@ jobs:
           $candidates = @("dist\\win","dist","build\\win","build")
           $selected = $null
           foreach ($c in $candidates) {
-            if (Test-Path $c -PathType Container -and (Get-ChildItem $c -Recurse | Measure-Object).Count -gt 0) {
+            if ((Test-Path $c -PathType Container) -and ((Get-ChildItem $c -Recurse | Measure-Object).Count -gt 0)) {
               $selected = $c
               break
             }
