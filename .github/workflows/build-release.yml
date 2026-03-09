@@ -78,7 +78,7 @@ jobs:
           path: dist/**
 
   release:
-    needs: build
+    needs: [check-version, build]
     if: needs.check-version.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -105,7 +105,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${{ needs.check-version.outputs.version }}"
+          VERSION="${{ steps.meta.outputs.version }}"
           TAG="v${VERSION}"
           # create release using GitHub CLI if available, otherwise use API via curl+jq
           if command -v gh >/dev/null 2>&1; then
