@@ -121,7 +121,7 @@ jobs:
               "https://api.github.com/repos/${{ github.repository }}/releases" > /tmp/release.json || true
           fi
 
-      - name: Upload release assets (named exactly)
+      - name: Upload release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -145,39 +145,41 @@ jobs:
             local asset_name="$2"
             if [ -f "$filepath" ]; then
               echo "Uploading $filepath as $asset_name"
-              curl -s --data-binary @"$filepath" \
+              curl -s --fail --show-error --data-binary @"$filepath" \
                 -H "Authorization: token ${GITHUB_TOKEN}" \
                 -H "Content-Type: application/octet-stream" \
-                "${UPLOAD_URL}?name=$(basename "$asset_name")" > /dev/null || true
+                "${UPLOAD_URL}?name=$(basename "$asset_name")"
             else
               echo "missing file: $filepath"
             fi
           }
 
-          # Attach mac: upload zipped .app but name the asset as ${DISPLAY}.app
-          if [ -f "dist/${DISPLAY}.app.zip" ]; then
-            upload "dist/${DISPLAY}.app.zip" "${DISPLAY}.app"
-          elif [ -d "dist/${DISPLAY}.app" ]; then
-            (cd dist && zip -r -q "${DISPLAY}.app.zip" "${DISPLAY}.app")
-            upload "dist/${DISPLAY}.app.zip" "${DISPLAY}.app"
+          # Mac: zip the .app and upload as Hopkit-mac.zip
+          if [ -d "dist/${DISPLAY}.app" ]; then
+            (cd dist && zip -r -q "${DISPLAY}-mac.zip" "${DISPLAY}.app")
+            upload "dist/${DISPLAY}-mac.zip" "${DISPLAY}-mac.zip"
           else
             echo "No mac artifact found for ${DISPLAY}"
           fi
 
-          # Attach Windows single exe if created
+          # Windows: zip the .exe or existing zip as Hopkit-windows.zip
           if [ -f "dist/${DISPLAY}.exe" ]; then
-            upload "dist/${DISPLAY}.exe" "${DISPLAY}.exe"
+            (cd dist && zip -r -q "${DISPLAY}-windows.zip" "${DISPLAY}.exe")
+            upload "dist/${DISPLAY}-windows.zip" "${DISPLAY}-windows.zip"
           elif [ -f "dist/${DISPLAY}-win-${VERSION}.zip" ]; then
-            upload "dist/${DISPLAY}-win-${VERSION}.zip" "${DISPLAY}.exe"
+            mv "dist/${DISPLAY}-win-${VERSION}.zip" "dist/${DISPLAY}-windows.zip"
+            upload "dist/${DISPLAY}-windows.zip" "${DISPLAY}-windows.zip"
           else
             echo "No windows artifact found for ${DISPLAY}"
           fi
 
-          # Attach Linux AppImage
+          # Linux: zip the AppImage as Hopkit-linux.zip
           if [ -f "dist/${DISPLAY}.appimage" ]; then
-            upload "dist/${DISPLAY}.appimage" "${DISPLAY}.appimage"
+            (cd dist && zip -r -q "${DISPLAY}-linux.zip" "${DISPLAY}.appimage")
+            upload "dist/${DISPLAY}-linux.zip" "${DISPLAY}-linux.zip"
           elif [ -f "dist/${DISPLAY}.AppImage" ]; then
-            upload "dist/${DISPLAY}.AppImage" "${DISPLAY}.appimage"
+            (cd dist && zip -r -q "${DISPLAY}-linux.zip" "${DISPLAY}.AppImage")
+            upload "dist/${DISPLAY}-linux.zip" "${DISPLAY}-linux.zip"
           else
             echo "No linux AppImage found for ${DISPLAY}"
           fi
