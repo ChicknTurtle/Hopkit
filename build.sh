@@ -141,7 +141,7 @@ EOF
 cp icon.png "$APPDIR/$DISPLAY.png" 2>/dev/null || true
 
 if [ ! -f "$CACHE/appimagetool" ]; then
-    curl -L https://github.com/AppImage/AppImageKit/releases/latest/download/appimagetool-x86_64.AppImage \
+    curl -L https://github.com/AppImage/appimagetool/releases/latest/download/appimagetool-x86_64.AppImage \
     -o "$CACHE/appimagetool"
     chmod +x "$CACHE/appimagetool"
 fi
