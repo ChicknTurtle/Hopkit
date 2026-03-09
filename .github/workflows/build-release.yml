@@ -69,6 +69,7 @@ jobs:
       - name: Run build (produces dist/)
         env:
           NW_VERSION: v0.108.0
+          SRCDIR: src
         run: ./build.sh
 
       - name: Upload dist artifacts

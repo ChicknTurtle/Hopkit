@@ -66,5 +66,5 @@ MainMenuState.draw = function (ctx) {
   ctx.textBaseline = 'alphabetic';
   ctx.font = '24px DigitalDisco';
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.fillText(`v${Game.jsons['manifest'].version}`, 10, Game.canvas.height / Game.dpr - 10);
+  ctx.fillText(`v${Game.version}`, 10, Game.canvas.height / Game.dpr - 10);
 }

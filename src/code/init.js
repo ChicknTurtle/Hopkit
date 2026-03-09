@@ -13,16 +13,6 @@ async function init() {
 
   await Assets.load();
 
-  Game.manifest = Game.jsons['manifest'];
-
-  if (Game.manifest.dev === true) {
-    console.log("Running in dev mode");
-    Game.debugToggles['debugText'] = true;
-    if (Game.isApp) {
-      nw.Window.get().showDevTools();
-    }
-  }
-
   Core.init();
 
   requestAnimationFrame(update);

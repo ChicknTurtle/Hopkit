@@ -112,6 +112,9 @@ Core.update = function(dt) {
       Game.debugToggles['drawHitboxes'] = !Game.debugToggles['drawHitboxes'];
     }
   }
+  if (Game.inputsClicked['F12'] && Game.isApp) {
+    nw.Window.get().showDevTools();
+  }
 
   Game.setCursor('default');
   
