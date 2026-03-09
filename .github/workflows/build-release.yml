@@ -1,0 +1,182 @@
+name: Build & Release Hopkit
+
+on:
+  push:
+    paths:
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      build: ${{ steps.compare.outputs.build }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - id: get_version
+        run: |
+          VERSION=$(python3 -c 'import json,sys;print(json.load(open("package.json"))["version"])')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - id: get_latest
+        run: |
+          TAG=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("tag_name",""))')
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - id: compare
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          TAG="${{ steps.get_latest.outputs.tag }}"
+          if [ "v$VERSION" = "$TAG" ]; then
+            echo "build=false" >> $GITHUB_OUTPUT
+          else
+            echo "build=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Cache NW.js and appimagetool
+        uses: actions/cache@v4
+        with:
+          path: |
+            nwjs-cache
+          key: nwjs-${{ runner.os }}-${{ hashFiles('package.json') }}-${{ env.NW_VERSION }}
+        env:
+          NW_VERSION: v0.108.0
+
+      - name: Ensure python3 available
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Make build script executable
+        run: chmod +x ./build.sh
+
+      - name: Run build (produces dist/)
+        env:
+          NW_VERSION: v0.108.0
+        run: ./build.sh
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts
+          path: dist/**
+
+  release:
+    needs: build
+    if: needs.check-version.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts
+          path: dist
+
+      - name: Read displayName & version
+        id: meta
+        run: |
+          DISPLAY=$(python3 -c 'import json,re;d=json.load(open("package.json"));disp=d.get("displayName", d.get("name","App"));print(re.sub(r"[^A-Za-z0-9._-]","",disp))')
+          VERSION=$(python3 -c 'import json;print(json.load(open("package.json"))["version"])')
+          echo "display=$DISPLAY" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          TAG="v${VERSION}"
+          # create release using GitHub CLI if available, otherwise use API via curl+jq
+          if command -v gh >/dev/null 2>&1; then
+            gh release create "${TAG}" --title "${TAG}" --notes "Release ${TAG}" || true
+          else
+            # create minimal release via API (jq used only if available; fallback to raw JSON)
+            PAYLOAD=$(printf '{"tag_name":"%s","name":"%s"}' "$TAG" "$TAG")
+            curl -s -X POST \
+              -H "Authorization: token ${GITHUB_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD" \
+              "https://api.github.com/repos/${{ github.repository }}/releases" > /tmp/release.json || true
+          fi
+
+      - name: Upload release assets (named exactly)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          TAG="v${VERSION}"
+          DISPLAY="${{ steps.meta.outputs.display }}"
+          # fallback if meta didn't set outputs (defensive)
+          if [ -z "$DISPLAY" ]; then
+            DISPLAY=$(python3 -c 'import json,re;d=json.load(open("package.json"));disp=d.get("displayName",d.get("name","App"));print(re.sub(r"[^A-Za-z0-9._-]","",disp))')
+          fi
+
+          # get upload_url for the release
+          UPLOAD_URL=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" "https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG}" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('upload_url','').split('{')[0])")
+          if [ -z "$UPLOAD_URL" ]; then
+            echo "Could not determine upload_url for release ${TAG}"
+            exit 1
+          fi
+
+          upload() {
+            local filepath="$1"
+            local asset_name="$2"
+            if [ -f "$filepath" ]; then
+              echo "Uploading $filepath as $asset_name"
+              curl -s --data-binary @"$filepath" \
+                -H "Authorization: token ${GITHUB_TOKEN}" \
+                -H "Content-Type: application/octet-stream" \
+                "${UPLOAD_URL}?name=$(basename "$asset_name")" > /dev/null || true
+            else
+              echo "missing file: $filepath"
+            fi
+          }
+
+          # Attach mac: upload zipped .app but name the asset as ${DISPLAY}.app
+          if [ -f "dist/${DISPLAY}.app.zip" ]; then
+            upload "dist/${DISPLAY}.app.zip" "${DISPLAY}.app"
+          elif [ -d "dist/${DISPLAY}.app" ]; then
+            (cd dist && zip -r -q "${DISPLAY}.app.zip" "${DISPLAY}.app")
+            upload "dist/${DISPLAY}.app.zip" "${DISPLAY}.app"
+          else
+            echo "No mac artifact found for ${DISPLAY}"
+          fi
+
+          # Attach Windows single exe if created
+          if [ -f "dist/${DISPLAY}.exe" ]; then
+            upload "dist/${DISPLAY}.exe" "${DISPLAY}.exe"
+          elif [ -f "dist/${DISPLAY}-win-${VERSION}.zip" ]; then
+            upload "dist/${DISPLAY}-win-${VERSION}.zip" "${DISPLAY}.exe"
+          else
+            echo "No windows artifact found for ${DISPLAY}"
+          fi
+
+          # Attach Linux AppImage
+          if [ -f "dist/${DISPLAY}.appimage" ]; then
+            upload "dist/${DISPLAY}.appimage" "${DISPLAY}.appimage"
+          elif [ -f "dist/${DISPLAY}.AppImage" ]; then
+            upload "dist/${DISPLAY}.AppImage" "${DISPLAY}.appimage"
+          else
+            echo "No linux AppImage found for ${DISPLAY}"
+          fi
