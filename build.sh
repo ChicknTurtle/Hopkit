@@ -12,73 +12,108 @@ APPIMAGETOOL="${CACHE_DIR}/appimagetool-x86_64.AppImage"
 
 mkdir -p "$CACHE_DIR" "$BUILD_DIR" "$DIST_DIR"
 
-# read metadata from package.json
+# ensure package.json exists
+if [ ! -f "package.json" ]; then
+  echo "ERROR: package.json not found in repo root." >&2
+  exit 1
+fi
+
+# read metadata from package.json (safe, single-line output)
 read -r NAME DISPLAY VERSION <<EOF
-$(python3 - <<PY
-import json,sys,re
+$(python3 - <<'PY'
+import json,re,sys
 d=json.load(open('package.json'))
 name = d.get('name','app')
 display = d.get('displayName', d.get('name','App'))
 version = d.get('version','0.0.0')
-# sanitize display for filenames: keep letters, numbers, dash, underscore
 display = re.sub(r'[^A-Za-z0-9._-]','',display)
+# print space-separated triple; caller will split
 print(name, display, version)
 PY
 )
 EOF
 
+# ensure SRCDIR exists
+if [ ! -d "$SRCDIR" ]; then
+  echo "ERROR: source directory '$SRCDIR' not found. Put your app files in '$SRCDIR' or set SRCDIR accordingly." >&2
+  exit 1
+fi
+
 echo "Building ${DISPLAY} (package name: ${NAME}) version ${VERSION}"
 echo "NW.js: ${NW_VERSION} arch: ${ARCH}"
 
-# cached download
+# cached download: human messages -> stderr; path printed to stdout only
 cached_download() {
-  local url="$1"; local outname="$2"
+  local url="$1"
+  local outname="$2"
   local outpath="$CACHE_DIR/$outname"
+
   if [ -f "$outpath" ]; then
-    echo "Using cached $outname"
+    echo "Using cached $outname" >&2
   else
-    echo "Downloading $outname"
+    echo "Downloading $outname" >&2
     curl -L -sS -o "$outpath" "$url"
   fi
-  echo "$outpath"
+
+  # final path on stdout (single line)
+  printf '%s' "$outpath"
+}
+
+# helper: verify a downloaded file exists
+ensure_file() {
+  local f="$1"
+  if [ -z "$f" ] || [ ! -f "$f" ]; then
+    echo "ERROR: expected file '$f' not found." >&2
+    return 1
+  fi
+  return 0
 }
 
 # clean previous build
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-# macos
+# macOS build (app bundle, recommended: app.nw as folder)
 build_macos() {
   echo "=== macOS build ==="
   local file="nwjs-${NW_VERSION}-osx-${ARCH}.zip"
   local url="https://dl.nwjs.io/${NW_VERSION}/${file}"
-  local zip=$(cached_download "$url" "$file")
+  local zip
+  zip=$(cached_download "$url" "$file")
 
-  tmp=$(mktemp -d)
-  unzip -q "$zip" -d "$tmp"
-  NW_APP=$(find "$tmp" -type d -name "nwjs.app" -print -quit || true)
-  if [ -z "$NW_APP" ]; then
-    NW_APP=$(find "$tmp" -maxdepth 2 -type d -name "*.app" -print -quit || true)
-  fi
-  if [ -z "$NW_APP" ]; then
-    echo "nwjs.app not found in archive"
-    rm -rf "$tmp"
+  if ! ensure_file "$zip"; then
+    echo "mac build: download missing, skipping mac build." >&2
     return 1
   fi
 
-  OUT_APP="${BUILD_DIR}/${DISPLAY}.app"
-  rm -rf "$OUT_APP"
-  cp -R "$NW_APP" "$OUT_APP"
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  unzip -q "$zip" -d "$tmpdir" || true
 
-  APP_NW_DIR="${OUT_APP}/Contents/Resources/app.nw"
+  local nw_app
+  nw_app=$(find "$tmpdir" -type d -name "nwjs.app" -print -quit || true)
+  if [ -z "$nw_app" ]; then
+    nw_app=$(find "$tmpdir" -maxdepth 2 -type d -name "*.app" -print -quit || true)
+  fi
+  if [ -z "$nw_app" ]; then
+    echo "nwjs.app not found in archive for mac build" >&2
+    rm -rf "$tmpdir"
+    return 1
+  fi
+
+  local OUT_APP="${BUILD_DIR}/${DISPLAY}.app"
+  rm -rf "$OUT_APP"
+  cp -R "$nw_app" "$OUT_APP"
+
+  local APP_NW_DIR="${OUT_APP}/Contents/Resources/app.nw"
   rm -rf "$APP_NW_DIR"
   mkdir -p "$APP_NW_DIR"
   cp -R "${SRCDIR}/." "$APP_NW_DIR/"
 
-  PLIST="${OUT_APP}/Contents/Info.plist"
+  local PLIST="${OUT_APP}/Contents/Info.plist"
   if [ -f "icon.icns" ]; then
     cp "icon.icns" "${OUT_APP}/Contents/Resources/app.icns" || true
-    if command -v /usr/libexec/PlistBuddy >/dev/null 2>&1; then
+    if command -v /usr/libexec/PlistBuddy >/dev/null 2>&1 && [ -f "$PLIST" ]; then
       /usr/libexec/PlistBuddy -c "Set :CFBundleName ${DISPLAY}" "$PLIST" || true
       /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${DISPLAY}" "$PLIST" || true
       /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile app.icns" "$PLIST" || true
@@ -89,112 +124,146 @@ build_macos() {
   cp -R "$OUT_APP" "$DIST_DIR/${DISPLAY}.app"
   (cd "$BUILD_DIR" && zip -r -q "../${DIST_DIR}/${DISPLAY}.app.zip" "$(basename "$OUT_APP")")
 
-  rm -rf "$tmp"
+  rm -rf "$tmpdir"
   echo "mac: produced ${DIST_DIR}/${DISPLAY}.app (bundle) and ${DIST_DIR}/${DISPLAY}.app.zip"
 }
 
-# windows
+# Windows build (runtime + app files; also produce concatenated exe if possible)
 build_windows() {
   echo "=== Windows build ==="
   local file="nwjs-${NW_VERSION}-win-${ARCH}.zip"
   local url="https://dl.nwjs.io/${NW_VERSION}/${file}"
-  local zip=$(cached_download "$url" "$file")
+  local zip
+  zip=$(cached_download "$url" "$file")
 
-  tmp=$(mktemp -d)
-  unzip -q "$zip" -d "$tmp"
+  if ! ensure_file "$zip"; then
+    echo "windows build: download missing, skipping windows build." >&2
+    return 1
+  fi
 
-  TOPDIR=$(find "$tmp" -maxdepth 1 -type d -name "nwjs*" -print -quit || true)
-  if [ -z "$TOPDIR" ]; then TOPDIR="$tmp"; fi
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  unzip -q "$zip" -d "$tmpdir" || true
 
-  OUT_DIR="${BUILD_DIR}/${DISPLAY}-win"
+  local TOPDIR
+  TOPDIR=$(find "$tmpdir" -maxdepth 1 -type d -name "nwjs*" -print -quit || true)
+  if [ -z "$TOPDIR" ]; then TOPDIR="$tmpdir"; fi
+
+  local OUT_DIR="${BUILD_DIR}/${DISPLAY}-win"
   rm -rf "$OUT_DIR"
   mkdir -p "$OUT_DIR"
-  cp -R "$TOPDIR/"* "$OUT_DIR/"
+  cp -R "$TOPDIR/"* "$OUT_DIR/" || true
 
   mkdir -p "${OUT_DIR}/${NAME}-files"
   cp -R "${SRCDIR}/." "${OUT_DIR}/${NAME}-files/"
 
-  PKGZIP="${BUILD_DIR}/package.nw"
-  (cd "${SRCDIR}" && zip -r -q "../${PKGZIP}" .)
+  local PKGZIP="${BUILD_DIR}/package.nw"
+  (cd "${SRCDIR}" && zip -r -q "${PKGZIP}" .) || true
 
+  local NW_EXE
   NW_EXE="$(find "$OUT_DIR" -maxdepth 1 -type f -iname 'nw.exe' -print -quit || true)"
   if [ -z "$NW_EXE" ]; then
-    echo "nw.exe not found in extracted runtime"
+    echo "nw.exe not found in extracted runtime; windows single-exe will not be created" >&2
   else
-    DIST_EXE="${DIST_DIR}/${DISPLAY}.exe"
+    local DIST_EXE="${DIST_DIR}/${DISPLAY}.exe"
     if command -v cat >/dev/null 2>&1; then
       cat "$NW_EXE" "$PKGZIP" > "${DIST_EXE}"
       chmod +x "${DIST_EXE}" || true
-      echo "windows: produced single-file ${DIST_EXE} (note: some runtime files may still be required alongside this exe)"
+      echo "windows: produced single-file ${DIST_EXE} (may still need runtime files to run reliably)"
     else
-      echo "cat not available; skipping single-file exe creation"
+      echo "cat not available; skipping single-file exe creation" >&2
     fi
   fi
 
   mkdir -p "$DIST_DIR"
-  (cd "$BUILD_DIR" && zip -r -q "../${DIST_DIR}/${DISPLAY}-win-${VERSION}.zip" "$(basename "$OUT_DIR")")
+  (cd "$BUILD_DIR" && zip -r -q "../${DIST_DIR}/${DISPLAY}-win-${VERSION}.zip" "$(basename "$OUT_DIR")") || true
 
-  rm -rf "$tmp" "$PKGZIP"
+  rm -rf "$tmpdir" "$PKGZIP"
 }
 
-# linux
+# Linux build -> AppImage (requires appimagetool)
 build_linux() {
   echo "=== Linux build ==="
   local file="nwjs-${NW_VERSION}-linux-${ARCH}.zip"
   local url="https://dl.nwjs.io/${NW_VERSION}/${file}"
-  local zip=$(cached_download "$url" "$file")
+  local zip
+  zip=$(cached_download "$url" "$file")
 
-  tmp=$(mktemp -d)
-  unzip -q "$zip" -d "$tmp"
-  TOPDIR=$(find "$tmp" -maxdepth 1 -type d -name "nwjs*" -print -quit || true)
-  if [ -z "$TOPDIR" ]; then TOPDIR="$tmp"; fi
+  if ! ensure_file "$zip"; then
+    echo "linux build: download missing, skipping linux build." >&2
+    return 1
+  fi
 
-  APPDIR="${BUILD_DIR}/${DISPLAY}.AppDir"
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  unzip -q "$zip" -d "$tmpdir" || true
+
+  local TOPDIR
+  TOPDIR=$(find "$tmpdir" -maxdepth 1 -type d -name "nwjs*" -print -quit || true)
+  if [ -z "$TOPDIR" ]; then TOPDIR="$tmpdir"; fi
+
+  local APPDIR="${BUILD_DIR}/${DISPLAY}.AppDir"
   rm -rf "$APPDIR"
   mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
-  cp -R "$TOPDIR/"* "$APPDIR/"
+  cp -R "$TOPDIR/"* "$APPDIR/" || true
 
   mkdir -p "${APPDIR}/usr/share/${NAME}"
   cp -R "${SRCDIR}/." "${APPDIR}/usr/share/${NAME}/"
 
-  cat > "${APPDIR}/AppRun" <<AR
+  cat > "${APPDIR}/AppRun" <<'AR'
 #!/usr/bin/env bash
-HERE="\$(dirname "\$(readlink -f "\${0}")")"
+HERE="$(dirname "$(readlink -f "${0}")")"
 # run the nw binary from inside the AppDir; prefer ./nw or usr/bin/nw
-if [ -x "\$HERE/nw" ]; then
-  exec "\$HERE/nw" "\$HERE/usr/share/${NAME}" "\$@"
-elif [ -x "\$HERE/usr/bin/nw" ]; then
-  exec "\$HERE/usr/bin/nw" "\$HERE/usr/share/${NAME}" "\$@"
+if [ -x "$HERE/nw" ]; then
+  exec "$HERE/nw" "$HERE/usr/share/APPDIR_APP_NAME" "$@"
+elif [ -x "$HERE/usr/bin/nw" ]; then
+  exec "$HERE/usr/bin/nw" "$HERE/usr/share/APPDIR_APP_NAME" "$@"
 else
   echo "nw binary not found in AppImage"
   exit 1
 fi
 AR
-  chmod +x "${APPDIR}/AppRun"
+
+# replace placeholder with actual NAME path
+sed -i "s/APPDIR_APP_NAME/${NAME}/g" "${APPDIR}/AppRun"
+chmod +x "${APPDIR}/AppRun"
 
   if [ -f "icon.png" ]; then
     cp "icon.png" "${APPDIR}/usr/share/icons/hicolor/256x256/apps/${DISPLAY}.png" || true
   fi
 
+  # ensure appimagetool exists in cache
   if [ ! -f "$APPIMAGETOOL" ]; then
-    echo "Downloading appimagetool"
+    echo "Downloading appimagetool into cache" >&2
     curl -L -sS -o "$APPIMAGETOOL" "https://github.com/AppImage/appimagetool/releases/latest/download/appimagetool-x86_64.AppImage"
-    chmod +x "$APPIMAGETOOL"
+    chmod +x "$APPIMAGETOOL" || true
   else
-    echo "Using cached appimagetool"
+    echo "Using cached appimagetool" >&2
   fi
 
-  (cd "$BUILD_DIR" && "$APPIMAGETOOL" "${APPDIR}" "${DIST_DIR}/${DISPLAY}.AppImage")
-  chmod +x "${DIST_DIR}/${DISPLAY}.AppImage"
+  if [ ! -x "$APPIMAGETOOL" ]; then
+    echo "ERROR: appimagetool not available or not executable at $APPIMAGETOOL" >&2
+    rm -rf "$tmpdir"
+    return 1
+  fi
+
+  (cd "$BUILD_DIR" && "$APPIMAGETOOL" "${APPDIR}" "${DIST_DIR}/${DISPLAY}.AppImage") || {
+    echo "appimagetool failed to create AppImage" >&2
+    rm -rf "$tmpdir"
+    return 1
+  }
+
+  chmod +x "${DIST_DIR}/${DISPLAY}.AppImage" || true
   echo "linux: produced ${DIST_DIR}/${DISPLAY}.AppImage"
-  rm -rf "$tmp"
+
+  rm -rf "$tmpdir"
 }
 
-# run builds
-build_macos || echo "mac build failed (continuing)"
-build_windows || echo "windows build failed (continuing)"
-build_linux || echo "linux build failed (continuing)"
+# run builds (best-effort; continue on single-platform failures)
+build_macos || echo "mac build failed (continuing)" >&2
+build_windows || echo "windows build failed (continuing)" >&2
+build_linux || echo "linux build failed (continuing)" >&2
 
 echo "Artifacts in ${DIST_DIR}:"
 ls -la "$DIST_DIR" || true
