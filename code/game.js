@@ -1,6 +1,7 @@
 export const Game = {
-  version: "0.1.1",
-  id: "hopkit",
+  manifest: null,
+  version: null,
+  id: null,
   isApp: (typeof nw !== "undefined"),
   /** @type {HTMLCanvasElement} */
   canvas: null,

@@ -13,6 +13,10 @@ async function init() {
 
   await Assets.load();
 
+  Game.manifest = Game.jsons['manifest'];
+  Game.version = Game.manifest.version;
+  Game.id = Game.manifest.name;
+
   Core.init();
 
   requestAnimationFrame(update);

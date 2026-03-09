@@ -6,6 +6,7 @@ export const Assets = {}
 Assets.load = async function() {
   Game.loading = [0,0];
   await Assets.loadAssets([
+    { type:'json', name:'manifest', src:'package.json' },
     { type:'texture', name:'editor', src:'assets/textures/editor.png' },
     { type:'texture', name:'tiles', src:'assets/textures/tiles.png' },
     { type:'texture', name:'player', src:'assets/textures/player.png' },
