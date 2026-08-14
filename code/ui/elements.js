@@ -1,6 +1,7 @@
 
 import { Vec2 } from "../utils/lib.js"
 import { Game } from "./../game.js"
+import { InputManager } from "./../inputs.js"
 import { Text } from "./../text.js"
 import { UI } from "./ui.js"
 
@@ -85,10 +86,9 @@ Elements.Button = class extends Elements.Element {
     if (this.hover) Game.setCursor('pointer');
   }
   checkClicked() {
-    const clicked = (Game.inputsClicked && Game.inputsClicked['Mouse0']);
+    const clicked = (InputManager.inputsClicked && InputManager.inputsClicked['Mouse0']);
     if (this.hover && clicked && !this.disabled && this.onClick) {
-      delete Game.inputs['Mouse0'];
-      delete Game.inputsClicked['Mouse0'];
+      InputManager.releaseInput('Mouse0');
       this.onClick();
     }
   }

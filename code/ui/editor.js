@@ -1,14 +1,17 @@
 
 import { Vec2 } from "../utils/lib.js"
 import { Game } from "./../game.js"
+import { Controls } from "./../controls.js"
 import { EventBus } from "./../core/eventBus.js"
 import { StateManager } from "./../core/stateManager.js"
 import { Elements } from "./elements.js"
 import { Editor } from "../states/editor.js"
 import { World } from "./../world/world.js"
+import { WorldIO } from "./../world/io.js"
 import { Text } from "./../text.js"
 import { UI } from "./ui.js"
 import { drawNineSlice } from "../utils/rendering.js"
+import { CustomPopup } from "./../custom_popup.js"
 
 export const EditorElements = {}
 
@@ -43,17 +46,40 @@ EditorElements.SaveButton = class extends Elements.Button {
     this.anchor = new Vec2(1,0);
     this.pivot = new Vec2(1,0);
     this.onClick = () => {
-      //EventBus.emit('worldio:save_to_file');
-      UI.managers.editor.show('SavePopup', () =>
-        new EditorElements.SavePopup()
-      );
+      const code = WorldIO.getLevelCode();
+      CustomPopup.show({
+        title: "Save Level",
+        text: code,
+        buttons: [
+          {
+            label: "Copy",
+            closeOnClick: false,
+            onClick(btn) {
+              CustomPopup.textInput.select();
+              navigator.clipboard.writeText(code).then(() => {
+                btn.textContent = "Copied!";
+              }).catch(err => {
+                console.error("Failed to copy:", err);
+                alert("Failed to copy: " + err);
+              });
+            }
+          },
+          {
+            label: "Download",
+            onClick(btn) {
+              WorldIO.saveToFile();
+            }
+          },
+          { label: "Close", onClick: () => {} }
+        ]
+      });
     }
   }
   draw(ctx) {
     ctx.imageSmoothingEnabled = false;
     const pos = this.getScreenPos();
     // button
-    if (this.hover && Game.inputs['Mouse0']) {
+    if (this.hover && Controls.held['leftMouse']) {
       ctx.drawImage(Game.textures['editor'], 52, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
     } else if (this.hover) {
       ctx.drawImage(Game.textures['editor'], 26, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
@@ -71,17 +97,31 @@ EditorElements.LoadButton = class extends Elements.Button {
     this.anchor = new Vec2(1,0);
     this.pivot = new Vec2(1,0);
     this.onClick = () => {
-      //EventBus.emit('worldio:load_from_file');
-      UI.managers.editor.show('LoadPopup', () =>
-        new EditorElements.LoadPopup()
-      );
+      CustomPopup.show({
+        title: "Load Level",
+        buttons: [
+          {
+            label: "Open File",
+            onClick(btn) {
+              WorldIO.loadFromFile();
+            }
+          },
+          {
+            label: "Paste Code",
+            onClick(btn) {
+              WorldIO.loadFromCode();
+            }
+          },
+          { label: "Close", onClick: () => {} }
+        ]
+      });
     }
   }
   draw(ctx) {
     ctx.imageSmoothingEnabled = false;
     const pos = this.getScreenPos();
     // button
-    if (this.hover && Game.inputs['Mouse0']) {
+    if (this.hover && Controls.held['leftMouse']) {
       ctx.drawImage(Game.textures['editor'], 52, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
     } else if (this.hover) {
       ctx.drawImage(Game.textures['editor'], 26, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
@@ -90,6 +130,48 @@ EditorElements.LoadButton = class extends Elements.Button {
     }
     // icon
     ctx.drawImage(Game.textures['editor'], 30, 52, 15, 15, pos.x+11, pos.y+11, 30, 30);
+  }
+}
+
+EditorElements.UndoButton = class extends Elements.Button {
+  constructor() {
+    super(new Vec2(-11,-143), new Vec2(52,52));
+    this.anchor = new Vec2(1,1);
+    this.pivot = new Vec2(1,1);
+    this.onClick = () => {
+      Editor.EditHistory.undo();
+    }
+  }
+  draw(ctx) {
+    ctx.imageSmoothingEnabled = false;
+    const pos = this.getScreenPos();
+    // button
+    if (this.hover) {
+      ctx.drawImage(Game.textures['editor'], 79, 100, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+    } else {
+      ctx.drawImage(Game.textures['editor'], 79, 75, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+    }
+  }
+}
+
+EditorElements.RedoButton = class extends Elements.Button {
+  constructor() {
+    super(new Vec2(-11,-83), new Vec2(52,52));
+    this.anchor = new Vec2(1,1);
+    this.pivot = new Vec2(1,1);
+    this.onClick = () => {
+      Editor.EditHistory.redo();
+    }
+  }
+  draw(ctx) {
+    ctx.imageSmoothingEnabled = false;
+    const pos = this.getScreenPos();
+    // button
+    if (this.hover) {
+      ctx.drawImage(Game.textures['editor'], 104, 100, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+    } else {
+      ctx.drawImage(Game.textures['editor'], 104, 75, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+    }
   }
 }
 
@@ -258,7 +340,7 @@ EditorElements.Popup = class extends Elements.Element {
     UI.managers.editor.show('PopupCloseButton', () =>
       new EditorElements.PopupCloseButton()
     );
-    if (Game.keybindsClicked['exitMenu']) {
+    if (Controls.clicked('exitMenu')) {
       Editor.hasPopup = false;
     }
   }
@@ -266,82 +348,6 @@ EditorElements.Popup = class extends Elements.Element {
     ctx.imageSmoothingEnabled = false;
     const pos = this.getScreenPos();
     drawNineSlice(ctx, Game.textures['editor'], 24, 24, [4,4,4,4], pos.x, pos.y, this.size.x, this.size.y, 185, 56, 2);
-  }
-}
-
-EditorElements.SavePopup = class extends EditorElements.Popup {
-  constructor() {
-    super();
-    Editor.hasPopup = true;
-  }
-  tick() {
-    if (!Editor.hasPopup) {
-      UI.managers.editor.destroy('PopupButton1');
-      UI.managers.editor.destroy('PopupButton2');
-    }
-    super.tick();
-    if (!Editor.hasPopup) {
-      return;
-    }
-    UI.managers.editor.show('PopupButton1', () => 
-      new EditorElements.PopupButton(new Vec2(0,-60), 'Save to File', () => {
-        EventBus.emit('worldio:save_to_file');
-        Editor.hasPopup = false;
-      })
-    );
-    UI.managers.editor.show('PopupButton2', () => 
-      new EditorElements.PopupButton(new Vec2(0,0), 'Copy Level Code', () => {
-        EventBus.emit('worldio:copy_level_code');
-        Editor.hasPopup = false;
-      })
-    );
-  }
-  draw(ctx) {
-    super.draw(ctx);
-    const pos = this.getScreenPos();
-    ctx.fillStyle = 'white';
-    ctx.font = `24px Pixellari`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    Text.parse(`<shadow:2,2,black>Save Level`).draw(ctx, pos.plus(this.size.divided(2)).plus(new Vec2(0,-120)))
-  }
-}
-
-EditorElements.LoadPopup = class extends EditorElements.Popup {
-  constructor() {
-    super();
-    Editor.hasPopup = true;
-  }
-  tick() {
-    if (!Editor.hasPopup) {
-      UI.managers.editor.destroy('PopupButton1');
-      UI.managers.editor.destroy('PopupButton2');
-    }
-    super.tick();
-    if (!Editor.hasPopup) {
-      return;
-    }
-    UI.managers.editor.show('PopupButton1', () => 
-      new EditorElements.PopupButton(new Vec2(0,-60), 'Load from File', () => {
-        EventBus.emit('worldio:load_from_file');
-        Editor.hasPopup = false;
-      })
-    );
-    UI.managers.editor.show('PopupButton2', () => 
-      new EditorElements.PopupButton(new Vec2(0,0), 'Load from Code', () => {
-        EventBus.emit('worldio:load_from_code');
-        Editor.hasPopup = false;
-      })
-    );
-  }
-  draw(ctx) {
-    super.draw(ctx);
-    const pos = this.getScreenPos();
-    ctx.fillStyle = 'white';
-    ctx.font = `24px Pixellari`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    Text.parse(`<shadow:2,2,black>Load Level`).draw(ctx, pos.plus(this.size.divided(2)).plus(new Vec2(0,-120)))
   }
 }
 

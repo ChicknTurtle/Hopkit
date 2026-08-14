@@ -1,6 +1,8 @@
 import { Vec2 } from "../utils/lib.js"
 import { Game } from "../game.js"
+import { Controls } from "../controls.js"
 import { EventBus } from "../core/eventBus.js"
+import { AudioPlayer } from "../audio.js"
 import { PhysicsEntity } from "./physics_entity.js"
 import { World } from "../world/world.js"
 import { WorldUtils } from "../world/utils.js"
@@ -94,7 +96,7 @@ export class PlayerEntity extends PhysicsEntity {
 
     // crouching & size
     const oldBottom = this.pos.y + this.size.y;
-    if (this.onGround && Game.keybinds['crouch'] && this.swipeTime <= 0) {
+    if (this.onGround && Controls.held('crouch') && this.swipeTime <= 0) {
       this.crouching = true;
       this.size = this.crouchingSize.clone();
       this.pos.y = oldBottom - this.size.y;
@@ -107,8 +109,8 @@ export class PlayerEntity extends PhysicsEntity {
     }
 
     // jump buffering
-    if (Game.keybindsClicked['jump']) this.jumpBufferTimer = this.jumpBufferTime;
-    this.jumpHeld = !!Game.keybinds['jump'];
+    if (Controls.clicked('jump')) this.jumpBufferTimer = this.jumpBufferTime;
+    this.jumpHeld = !!Controls.held('jump');
     this.jumpBufferTimer = Math.max(0, this.jumpBufferTimer - dt);
 
     // coyote time
@@ -124,7 +126,7 @@ export class PlayerEntity extends PhysicsEntity {
       this.endedSwipeSinceGrounded = true;
     }
     this.swipeCooldownTime = Math.max(0, this.swipeCooldownTime - dt);
-    if (Game.keybindsClicked['attack'] && this.swipeCooldownTime <= 0 && !this.crouching) {
+    if (Controls.clicked('attack') && this.swipeCooldownTime <= 0 && !this.crouching) {
       this.swipeTime = this.swipeDuration;
       this.swipeCooldownTime = this.swipeCooldown;
       if (!this.onGround && !(this.coyoteTimer > 0) && !this.swipedSinceGrounded) {
@@ -132,6 +134,7 @@ export class PlayerEntity extends PhysicsEntity {
         this.endedSwipeSinceGrounded = false;
         this.vel.y = Math.min(this.vel.y, this.swipeVelocity);
       }
+      AudioPlayer.playSound('gameplay.player.swipe');
     }
     if (this.swipeTime > 0 && !this.onGround && !this.endedSwipeSinceGrounded) {
       this.vel.y = Math.min(this.vel.y, 0);
@@ -139,8 +142,8 @@ export class PlayerEntity extends PhysicsEntity {
 
     // movement input
     let inputDir = 0;
-    if (Game.keybinds['moveLeft']) inputDir -= 1;
-    if (Game.keybinds['moveRight']) inputDir += 1;
+    if (Controls.held('moveLeft')) inputDir -= 1;
+    if (Controls.held('moveRight')) inputDir += 1;
     this.walking = (inputDir !== 0);
     const baseAccel = this.crouching ? this.moveSpeedCrouching : this.moveSpeed;
     const accel = baseAccel * (this.onGround ? 1 : this.airControl);

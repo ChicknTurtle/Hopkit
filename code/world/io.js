@@ -1,5 +1,7 @@
 import { Vec2 } from "./../utils/lib.js"
 import { Game } from "./../game.js"
+import { CustomPopup } from "../custom_popup.js"
+import { EventBus } from "./../core/eventBus.js";
 import { World } from "./world.js"
 import { LZString } from "./../lib/lz-string.js";
 
@@ -352,6 +354,7 @@ export const WorldIO = {
 
     console.debug(`Successfully loaded savedata (${loaded} chunk(s), version:${saveData.v ?? saveData.version ?? 'unknown'})`);
     World.chunks = newChunks;
+    EventBus.emit('worldio:save_loaded', { loadedChunks: loaded, version: saveData.v ?? saveData.version ?? 'unknown' });
     return true;
   }
 };
@@ -364,16 +367,10 @@ WorldIO.decodeLevel = function(code) {
   return JSON.parse(LZString.decompressFromBase64(code));
 }
 
-WorldIO.copyLevelCode = function() {
+WorldIO.getLevelCode = function() {
   const saveData = WorldIO.getSaveData();
   const code = WorldIO.encodeLevel(saveData);
-  navigator.clipboard.writeText(code).then(() => {
-    console.log("Level code copied to clipboard", code);
-    alert("Level code copied to clipboard:\n\n" + code);
-  }).catch(err => {
-    console.error("Failed to copy level code: ", err);
-    alert("Failed to copy level code: " + err);
-  });
+  return code;
 }
 
 WorldIO.loadFromCode = function() {
@@ -391,7 +388,6 @@ WorldIO.loadFromCode = function() {
     alert(`Failed to load world from code: ${err}`);
   }
 }
-
 
 WorldIO.saveToFile = function() {
   console.log("Saving world to file...");
@@ -453,18 +449,22 @@ WorldIO.loadFromFile = async function() {
   }
 };
 
-WorldIO.autosave = function() {
+WorldIO.autosave = function(historyData) {
   const saveData = WorldIO.getSaveData();
-  localStorage.setItem(`${Game.id}.autosave`, WorldIO.encodeLevel(saveData));
+  const autosaveData = { lvl: saveData, history: historyData ?? null };
+  localStorage.setItem(`${Game.id}.autosave`, WorldIO.encodeLevel(autosaveData));
 }
 
 WorldIO.loadAutosave = function() {
   const autosave = localStorage.getItem(`${Game.id}.autosave`);
   if (autosave) {
-    const saveData = WorldIO.decodeLevel(autosave) ?? JSON.parse(autosave);
+    const autosaveData = WorldIO.decodeLevel(autosave) ?? JSON.parse(autosave);
+    const saveData = autosaveData.lvl ?? autosaveData;
     WorldIO.loadSaveData(saveData);
-    console.log('Loaded autosave.')
+    console.log('Loaded autosave.');
+    EventBus.emit('worldio:autosave_loaded', autosaveData.history ?? null);
   } else {
     console.log('No autosave found.');
+    EventBus.emit('worldio:autosave_loaded', null);
   }
 }

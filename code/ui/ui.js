@@ -1,6 +1,7 @@
 
 import { Vec2 } from "../utils/lib.js"
 import { Game } from "../game.js"
+import { InputManager } from "../inputs.js"
 
 export const UI = {
   managers: {},
@@ -79,7 +80,7 @@ UI.Manager = class {
         candidates.sort((a, b) => (b.z ?? 0) - (a.z ?? 0));
         const top = candidates[0];
         interactive.forEach(el => el.updateHover(el === top));
-        if (Game.inputsClicked?.['Mouse0']) {
+        if (InputManager.inputsClicked?.['Mouse0']) {
           if (typeof top.checkClicked === 'function') top.checkClicked();
         }
       }
@@ -88,7 +89,7 @@ UI.Manager = class {
       const topBlocker = blockers[0];
       if (typeof topBlocker.updateHover === 'function') {
         interactive.forEach(el => el.updateHover(el === topBlocker));
-        if (Game.inputsClicked?.['Mouse0']) {
+        if (InputManager.inputsClicked?.['Mouse0']) {
           if (typeof topBlocker.checkClicked === 'function') topBlocker.checkClicked();
         }
       } else {

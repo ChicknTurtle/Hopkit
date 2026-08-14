@@ -2,6 +2,7 @@
 import { Vec2 } from "./../utils/lib.js"
 import { Game } from "./../game.js"
 import { InputManager } from "./../inputs.js"
+import { Controls } from "./../controls.js"
 import { EventBus } from "./../core/eventBus.js"
 import { World } from "./../world/world.js"
 import { WorldIO } from "./../world/io.js"
@@ -25,6 +26,7 @@ Core.init = function() {
   EventBus.on('worldio:load_autosave', WorldIO.loadAutosave);
   EventBus.on('worldio:copy_level_code', WorldIO.copyLevelCode);
   EventBus.on('worldio:load_from_code', WorldIO.loadFromCode);
+  Editor.setupGlobalListeners();
 
   // register states
   StateManager.register('main_menu', MainMenuState);
@@ -35,22 +37,7 @@ Core.init = function() {
   // load autosave
   EventBus.emit('worldio:load_autosave');
 
-  // setup keybinds
-  InputManager.addKeybind('moveLeft', ['KeyA','ArrowLeft'])
-  InputManager.addKeybind('moveRight', ['KeyD','ArrowRight'])
-  InputManager.addKeybind('jump', ['KeyW','ArrowUp','Space'])
-  InputManager.addKeybind('crouch', ['KeyS','ArrowDown'])
-  InputManager.addKeybind('attack', ['KeyX','KeyK'])
-  InputManager.addKeybind('editorCamLeft', ['KeyA','ArrowLeft'])
-  InputManager.addKeybind('editorCamRight', ['KeyD','ArrowRight'])
-  InputManager.addKeybind('editorCamUp', ['KeyW','ArrowUp'])
-  InputManager.addKeybind('editorCamDown', ['KeyS','ArrowDown'])
-  InputManager.addKeybind('editorZoomIn', ['Equal'])
-  InputManager.addKeybind('editorZoomOut', ['Minus'])
-  InputManager.addKeybind('editorToggleGrid', ['KeyG'])
-  InputManager.addKeybind('exitMenu', ['Escape'])
-  InputManager.addKeybind('frameByFrame', ['KeyP'])
-  InputManager.addKeybind('stepFrame', ['KeyO'])
+  Controls.registerControls();
 
   // register entities
   Entities.register();
@@ -76,8 +63,8 @@ Core.update = function(dt) {
   Game.debugText.push(`dpr: ${Game.dpr.toFixed(2)}, canvas: ${Game.canvas.width.toFixed(0)},${Game.canvas.height.toFixed(0)}`);
   Game.debugText.push(`state: ${StateManager.current}`);
   Game.debugText.push(`cam: ${World.cam.pos.x.toFixed(0)},${World.cam.pos.y.toFixed(0)}, zoom: ${World.cam.zoom.toFixed(2)}`);
-  Game.debugText.push(`inputs: ${Object.keys(Game.inputs)}`);
-  Game.debugText.push(`keybinds: ${Object.keys(Game.keybinds)}`);
+  Game.debugText.push(`inputs: ${Object.keys(InputManager.inputs)}`);
+  Game.debugText.push(`controls: ${Object.keys(Controls._held)}`);
 
   Game.dpr = window.devicePixelRatio || 1;
   const rect = Game.canvas.getBoundingClientRect();
@@ -97,22 +84,22 @@ Core.update = function(dt) {
     return;
   }
 
-  if (Game.inputsReleased['Backslash']) {
+  if (InputManager.inputsReleased['Backslash']) {
     if (!Game.ignoreNextDebugToggle) {
       Game.debugToggles['debugText'] = !Game.debugToggles['debugText'];
     }
     Game.ignoreNextDebugToggle = false;
-  } else if (Game.inputs['Backslash']) {
-    if (Game.inputsClicked['KeyG']) {
+  } else if (InputManager.inputs['Backslash']) {
+    if (InputManager.inputsClicked['KeyG']) {
       Game.ignoreNextDebugToggle = true;
       Game.debugToggles['chunkGrid'] = !Game.debugToggles['chunkGrid'];
     }
-    if (Game.inputsClicked['KeyH']) {
+    if (InputManager.inputsClicked['KeyH']) {
       Game.ignoreNextDebugToggle = true;
       Game.debugToggles['drawHitboxes'] = !Game.debugToggles['drawHitboxes'];
     }
   }
-  if (Game.inputsClicked['F12'] && Game.isApp) {
+  if (InputManager.inputsClicked['F12'] && Game.isApp) {
     nw.Window.get().showDevTools();
   }
 
@@ -120,8 +107,7 @@ Core.update = function(dt) {
   
   StateManager.update(Game.dt);
 
-  Game.inputsClicked = {};
-  Game.inputsReleased = {};
-  Game.keybindsClicked = {};
-  Game.keybindsReleased = {};
+  InputManager.clearFrame();
+  Controls.clearFrame();
+  if (Game.mousePos) Game.prevMousePos = Game.mousePos.clone();
 }

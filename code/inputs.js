@@ -2,109 +2,110 @@
 import { Vec2 } from "./utils/lib.js"
 import { Game } from "./game.js"
 import { EventBus } from "./core/eventBus.js";
+import { CustomPopup } from "./custom_popup.js"
 
 export const InputManager = {
-  pressInput: function(input) {
-    Game.inputs[input] = true;
-    Game.inputsClicked[input] = true;
-    InputManager.keybinds?.[input]?.forEach(keybind => {
-      const wasPressed = !!Game.keybinds[keybind];
-      Game.keybinds[keybind] = true;
-      if (!wasPressed) Game.keybindsClicked[keybind] = true;
-      if (!wasPressed) EventBus.emit('keybind:pressed', keybind);
-    });
-  },
-
-  releaseInput: function(input) {
-    delete Game.inputs[input];
-    Game.inputsReleased[input] = true;
-    InputManager.keybinds?.[input]?.forEach(keybind => {
-      const stillHeld = Object.keys(InputManager.keybinds).some(k => {
-        if (k === input) return false;
-        const binds = InputManager.keybinds[k];
-        return binds && binds.includes(keybind) && Game.inputs[k];
-      });
-      if (!stillHeld) {
-        delete Game.keybinds[keybind];
-        Game.keybindsReleased[keybind] = true;
-      }
-    });
-  },
-
-  unfocus: function() {
-    Game.inputs = {};
-    Game.keybinds = {};
-    Game.mousePos = null;
-    Game.prevMousePos = null;
-  },
-
-  keybinds: {},
+  inputs: {},
+  inputsClicked: {},
+  inputsReleased: {},
 }
 
-InputManager.addKeybind = function(keybind, keys) {
-  if (!Array.isArray(keys)) {
-    keys = [keys];
-  }
-  keys.forEach(key => {
-    if (!InputManager.keybinds[key]) {
-      InputManager.keybinds[key] = [keybind];
-      return;
-    } else if (!InputManager.keybinds[key].includes(keybind)) {
-      InputManager.keybinds[key].push(keybind);
-    }
+InputManager.pressInput = function(input) {
+  InputManager.inputs[input] = true;
+  InputManager.inputsClicked[input] = true;
+  EventBus.emit('input:pressed', input);
+}
+
+InputManager.releaseInput = function(input) {
+  delete InputManager.inputs[input];
+  InputManager.inputsReleased[input] = true;
+  EventBus.emit('input:released', input);
+}
+
+InputManager.unfocusKeys = function() {
+  const held = Object.keys(InputManager.inputs);
+  InputManager.inputs = {};
+  held.forEach(input => {
+    InputManager.releaseInput(input);
   });
 }
 
+InputManager.unfocusMouse = function() {
+  Game.mousePos = null;
+  Game.prevMousePos = null;
+}
+
+InputManager.clearFrame = function() {
+  InputManager.inputsClicked = {};
+  InputManager.inputsReleased = {};
+}
+
 window.addEventListener('blur', function(event) {
-  InputManager.unfocus()
+  InputManager.unfocusKeys();
+  InputManager.unfocusMouse();
 });
+
 window.addEventListener('visibilitychange', function(event) {
-  InputManager.unfocus()
+  InputManager.unfocusKeys();
+  InputManager.unfocusMouse();
+  if (Game.loading) return;
+  if (Game.state === 'editor') {
+    if (document.visibilityState === 'hidden') {
+      EventBus.emit('editor:autosave');
+    }
+  }
 });
-document.addEventListener('pointerleave', function(event) {
-  InputManager.unfocus()
+
+window.addEventListener('pointerleave', function(event) {
+  InputManager.unfocusMouse();
 });
 
 document.addEventListener('mousemove', function(event) {
+  if (CustomPopup.showing) return;
   Game.mousePos = new Vec2(event.clientX, event.clientY);
 });
 
 document.addEventListener('mousedown', function(event) {
+  if (CustomPopup.showing) return;
   Game.mousePos = new Vec2(event.clientX, event.clientY);
   InputManager.pressInput('Mouse'+event.button);
 });
+
 document.addEventListener('mouseup', function(event) {
   InputManager.releaseInput('Mouse'+event.button);
 });
 
 document.addEventListener('keydown', function(event) {
   if (Game.loading) return;
-  if (!(event.ctrlKey || event.metaKey)) {
+  if (event.metaKey) {
+    if (event.code === 'KeyZ') event.preventDefault();
+  } else {
     event.preventDefault();
   }
-  if (Game.inputs[event.code]) return;
+  if (CustomPopup.showing) {
+    if (event.code === 'Escape') CustomPopup.hide();
+    return;
+  }
   InputManager.pressInput(event.code);
 });
+
 document.addEventListener('keyup', function(event) {
+  if (Game.loading) return;
+  if (event.code === 'MetaLeft' || event.code === 'MetaRight') {
+    InputManager.unfocusKeys();
+    return;
+  }
   InputManager.releaseInput(event.code);
 });
 
-document.addEventListener("contextmenu", function(event) {
+document.addEventListener('contextmenu', function(event) {
   if (Game.loading) return;
   event.preventDefault();
 });
 
-document.addEventListener("wheel", function(event) {
+document.addEventListener('wheel', function(event) {
+  if (CustomPopup.showing) return;
   event.preventDefault();
-  Game.inputsClicked['scroll'] ??= 0;
-  Game.inputsClicked['scroll'] += event.deltaX+event.deltaY;
+  InputManager.inputsClicked['scroll'] ??= 0;
+  InputManager.inputsClicked['scroll'] += event.deltaX+event.deltaY;
 },{ passive:false });
-
-document.addEventListener("visibilitychange", function(event) {
-  if (Game.loading) return;
-  if (Game.state === 'editor') {
-    if (document.visibilityState === 'hidden') {
-      Editor.autosave();
-    }
-  }
-});

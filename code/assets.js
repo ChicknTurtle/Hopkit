@@ -1,5 +1,6 @@
 
 import { Game } from "./game.js"
+import { AudioPlayer } from "./audio.js"
 
 export const Assets = {}
 
@@ -14,7 +15,12 @@ Assets.load = async function() {
     { type:'texture', name:'entityIcons', src:'assets/textures/entityIcons.png' },
     { type:'font', name:'Pixellari', src:'assets/fonts/Pixellari.ttf' },
     { type:'font', name:'DigitalDisco', src:'assets/fonts/DigitalDisco.ttf' },
-    { type:'font', name:'LycheeSoda', src:'assets/fonts/LycheeSoda.ttf' },
+    { type:'sound', name:'ui.undo', src:'assets/sounds/ui/undo.wav' },
+    { type:'sound', name:'ui.redo', src:'assets/sounds/ui/redo.wav' },
+    { type:'sound', name:'ui.invalid', src:'assets/sounds/ui/invalid.wav' },
+    { type:'sound', name:'ui.place_tile', src:'assets/sounds/ui/place_tile.wav' },
+    { type:'sound', name:'ui.remove_tile', src:'assets/sounds/ui/remove_tile.wav' },
+    { type:'sound', name:'gameplay.player.swipe', src:'assets/sounds/gameplay/player/swipe.wav' },
   ]);
   Game.loading = null;
 
@@ -45,6 +51,10 @@ Assets.loadFont = function(name, src) {
   });
 }
 
+Assets.loadSound = function(name, src, meta) {
+  return AudioPlayer.loadSound(name, src, meta);
+}
+
 Assets.loadJson = function(name, src) {
   return new Promise((resolve, reject) => {
     fetch(src).then(response => {
@@ -69,6 +79,9 @@ Assets.loadAssets = async function(assetList) {
         break;
       case 'font':
         loader = Assets.loadFont(asset.name, asset.src);
+        break;
+      case 'sound':
+        loader = Assets.loadSound(asset.name, asset.src);
         break;
       case 'json':
         loader = Assets.loadJson(asset.name, asset.src);

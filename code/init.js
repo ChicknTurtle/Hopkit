@@ -1,10 +1,13 @@
 
 import { Game } from "./game.js"
+import { Controls } from "./controls.js"
 import { Assets } from "./assets.js"
 import { Core } from "./core/core.js"
 import { Renderer } from "./core/rendering.js"
+import { CustomPopup } from "./custom_popup.js"
 
 async function init() {
+  CustomPopup.init();
   Game.canvas = document.getElementById('gameCanvas');
   Game.textInput = document.getElementById('textInput');
   Game.fileInput = document.getElementById('fileInput');
@@ -34,9 +37,8 @@ function update() {
   Game.fps = 1 / dt;
   Game.gameTime += dt;
 
-  if (Game.keybindsClicked['stepFrame'] || !Game.keybinds['frameByFrame']) {
+  if (Controls.clicked('stepFrame') || !Controls.held('frameByFrame')) {
     Core.update(Game.dt);
-    if (Game.mousePos) Game.prevMousePos = Game.mousePos.clone();
   }
   Renderer.draw(Game.ctx);
 
