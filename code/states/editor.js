@@ -5,7 +5,6 @@ import { InputManager } from "../inputs.js"
 import { Controls } from "../controls.js"
 import { EventBus } from "../core/eventBus.js"
 import { World } from "../world/world.js"
-import { WorldUtils } from "../world/utils.js"
 import { WorldRenderer } from "../world/rendering.js"
 import { UI } from "../ui/ui.js"
 import { EditorElements } from "../ui/editor.js"
@@ -66,7 +65,7 @@ Editor.EditHistory.recordChange = function(layer, x, y, oldTile, newTile) {
   const key = `${layer},${x},${y}`;
   const existing = Editor.EditHistory.strokeChanges.get(key);
   if (existing) {
-    existing.newTile = newTile; // keep original oldTile, update latest newTile
+    existing.newTile = newTile;
   } else {
     Editor.EditHistory.strokeChanges.set(key, { layer, x, y, oldTile, newTile });
   }
@@ -125,6 +124,10 @@ Editor.setTileAt = function(pos, layer, tileId) {
   return old !== tileId;
 };
 
+Editor.getFitHotbarIcons = function() {
+  return Math.floor(Math.min(Editor.hotbar.length, Math.max(1, ((Game.canvas.width*(1/Game.dpr))-160)/60)));
+}
+
 Editor.moveHotbarIndexToFront = function(idx) {
   if (idx === 0 || idx < 0 || idx >= Editor.hotbar.length) return;
   const entry = Editor.hotbar.splice(idx, 1)[0];
@@ -133,12 +136,16 @@ Editor.moveHotbarIndexToFront = function(idx) {
   Editor.selectedTile = Editor.hotbar[0];
 };
 
-Editor.getFitHotbarIcons = function() {
-  return Math.floor(Math.min(Editor.hotbar.length, Math.max(1, ((Game.canvas.width*(1/Game.dpr))-160)/60)));
-}
-
 Editor.switchHotbar = function(index) {
-  Editor.selectedHotbarIndex = Math.min(index, Editor.getFitHotbarIcons()-1);
+  if (Editor.selectedHotbarIndex === index) return;
+  let offset = 0;
+  if (Editor.EditHistory.strokeChanges) {
+    if (Editor.selectedHotbarIndex > index) {
+      offset = 1;
+    }
+    Editor.moveHotbarIndexToFront(Editor.selectedHotbarIndex);
+  }
+  Editor.selectedHotbarIndex = Math.min(index, Editor.getFitHotbarIcons()-1) + offset;
 }
 
 Editor.zoomCamera = function(amount, pos) {
@@ -231,6 +238,17 @@ Editor.enter = function(payload) {
   UI.managers.editor.show('PaletteBackground', () =>
     new EditorElements.PaletteBackground()
   );
+  // canvas paint area
+  UI.managers.editor.show('CanvasPaintArea', () =>
+    new EditorElements.CanvasPaintArea()
+  );
+  // sidebar and topbar
+  UI.managers.editor.show('Sidebar', () =>
+    new EditorElements.Sidebar()
+  );
+  UI.managers.editor.show('TopBar', () =>
+    new EditorElements.TopBar()
+  );
   // undo button
   UI.managers.editor.show('undo_button', () =>
     new EditorElements.UndoButton()
@@ -262,11 +280,11 @@ Editor.exit = function() {
 Editor.update = function(dt) {
   for (let i = 0; i < 10; i++) {
     if (InputManager.inputsClicked[`Digit${i+1}`]) {
-      EventBus.emit('editor:switch_hotbar', i);
+      EventBus.emit('editor:switch_hotbar', 9-i);
     }
   }
   if (InputManager.inputsClicked['Digit0']) {
-    EventBus.emit('editor:switch_hotbar', 9);
+    EventBus.emit('editor:switch_hotbar', 0);
   }
   Editor.selectedTile = Editor.hotbar[Editor.selectedHotbarIndex];
 
@@ -283,22 +301,6 @@ Editor.update = function(dt) {
   }
   if (Controls.held('editorZoomOut')) {
     EventBus.emit('editor:zoom', { amount: 400*dt, pos: new Vec2(Game.canvas.width/2*(1/Game.dpr),Game.canvas.height/2*(1/Game.dpr)) });
-  }
-
-  // mouse controls
-  if (!Editor.hasPopup && Game.mousePos && Game.mousePos.y > Editor.SIDEBAR_HEIGHT && Game.mousePos.x < Game.canvas.width*(1/Game.dpr)-(Editor.SIDEBAR_WIDTH+(Editor.viewingPalette ? Editor.PALETTE_WIDTH : 0))) {
-    // pan
-    if (InputManager.inputs['Mouse2'] || InputManager.inputsClicked['Mouse2']) {
-      EventBus.emit('editor:pan', { delta: Game.mouseVel.divided(World.cam.zoom) });
-    }
-    if (InputManager.inputsClicked['pan']) {
-      EventBus.emit('editor:pan', { delta: InputManager.inputsClicked['pan'] });
-    }
-
-    // zoom
-    if (InputManager.inputsClicked['scroll']) {
-      EventBus.emit('editor:zoom', { amount: InputManager.inputsClicked['scroll'], pos: Game.mousePos });
-    }
   }
 
   // erasing toggle logic
@@ -324,44 +326,6 @@ Editor.update = function(dt) {
   // undo/redo
   if (Controls.clicked('editorUndo')) Editor.EditHistory.undo();
   if (Controls.clicked('editorRedo')) Editor.EditHistory.redo();
-
-  // place/erase tiles
-  const sidebarWidth = (Editor.viewingPalette ? Editor.SIDEBAR_WIDTH + Editor.PALETTE_WIDTH : Editor.SIDEBAR_WIDTH);
-  const prevMousePos = Game.prevMousePos ?? Game.mousePos;
-  if (Game.mousePos &&
-    (!Editor.hasPopup &&
-    (InputManager.inputs['Mouse0'] || InputManager.inputsClicked['Mouse0']) || (InputManager.inputs['Mouse1'] || InputManager.inputsClicked['Mouse1'])) &&
-    Game.mousePos.x > 0 &&
-    Game.mousePos.x < Game.canvas.width*(1/Game.dpr) - sidebarWidth &&
-    Game.mousePos.y > Editor.SIDEBAR_HEIGHT &&
-    Game.mousePos.y < Game.canvas.height*(1/Game.dpr)
-  ) {
-    // begin stroke for history tracking
-    if (InputManager.inputsClicked['Mouse0'] || InputManager.inputsClicked['Mouse1']) {
-      Editor.EditHistory.beginStroke();
-    }
-    if (Editor.erasing) {
-      let didChange = false;
-      WorldUtils.getIntersectingTiles(WorldUtils.getGamePos(prevMousePos), WorldUtils.getGamePos(Game.mousePos)).forEach(tilepos => {
-        Object.values(World.layers).forEach(layer => {
-          didChange = Editor.setTileAt(tilepos, layer, null) || didChange;
-        });
-      });
-      if (didChange) { AudioPlayer.playSound('ui.remove_tile'); }
-    } else {
-      let didChange = false;
-      WorldUtils.getIntersectingTiles(WorldUtils.getGamePos(prevMousePos), WorldUtils.getGamePos(Game.mousePos)).forEach(tilepos => {
-        didChange = Editor.setTileAt(tilepos, World.tileInfo[Editor.selectedTile.id]?.layer ?? 0, Editor.selectedTile.id) || didChange;
-        Editor.moveHotbarIndexToFront(Editor.selectedHotbarIndex);
-      });
-      if (didChange) { AudioPlayer.playSound('ui.place_tile'); }
-    }
-    Editor.unsavedChanges = true;
-  }
-  // end stroke for history tracking
-  if (InputManager.inputsReleased['Mouse0'] || InputManager.inputsReleased['Mouse1']) {
-    Editor.EditHistory.endStroke();
-  }
 
   // ui
 
@@ -401,14 +365,6 @@ Editor.draw = function(ctx) {
   WorldRenderer.draw(ctx);
   ctx.restore();
   
-  // palette bg
-  ctx.fillStyle = 'rgba(200,200,200,0.5)';
-  ctx.fillRect(0, 0, Game.canvas.width*(1/Game.dpr), Editor.SIDEBAR_HEIGHT);
-  // sidebar bg
-  ctx.fillStyle = 'rgba(100,100,100,0.5)';
-  ctx.fillRect(Game.canvas.width*(1/Game.dpr)-Editor.SIDEBAR_WIDTH, Editor.SIDEBAR_HEIGHT, Editor.SIDEBAR_WIDTH, 3);
-  ctx.fillStyle = 'rgba(200,200,200,0.5)';
-  ctx.fillRect(Game.canvas.width*(1/Game.dpr)-Editor.SIDEBAR_WIDTH, Editor.SIDEBAR_HEIGHT+3, Editor.SIDEBAR_WIDTH, Game.canvas.height*(1/Game.dpr)-Editor.SIDEBAR_HEIGHT-3);
   // ui
   UI.managers.editor.draw(ctx);
 }

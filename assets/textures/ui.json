@@ -1,0 +1,316 @@
+{
+  "sprites": {
+    "undo-button": {
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "redo-button": {
+      "bounds": {
+        "x": 24,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "undo-button-hover": {
+      "bounds": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "redo-button-hover": {
+      "bounds": {
+        "x": 24,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "menu-button": {
+      "bounds": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 24
+      },
+      "center": {
+        "x": 5,
+        "y": 5,
+        "w": 14,
+        "h": 13
+      }
+    },
+    "menu-button-hover": {
+      "bounds": {
+        "x": 0,
+        "y": 72,
+        "w": 24,
+        "h": 24
+      },
+      "center": {
+        "x": 5,
+        "y": 5,
+        "w": 14,
+        "h": 13
+      }
+    },
+    "hotbar-icon-selected": {
+      "bounds": {
+        "x": 24,
+        "y": 104,
+        "w": 28,
+        "h": 28
+      }
+    },
+    "hotbar-icon-hover": {
+      "bounds": {
+        "x": 24,
+        "y": 76,
+        "w": 28,
+        "h": 28
+      }
+    },
+    "hotbar-icon": {
+      "bounds": {
+        "x": 24,
+        "y": 48,
+        "w": 28,
+        "h": 28
+      }
+    },
+    "back-button": {
+      "bounds": {
+        "x": 48,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "next-button": {
+      "bounds": {
+        "x": 72,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "back-button-hover": {
+      "bounds": {
+        "x": 48,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "next-button-hover": {
+      "bounds": {
+        "x": 72,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "play-button": {
+      "bounds": {
+        "x": 96,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "stop-button": {
+      "bounds": {
+        "x": 120,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "play-button-hover": {
+      "bounds": {
+        "x": 96,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "stop-button-hover": {
+      "bounds": {
+        "x": 120,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "palette-button": {
+      "bounds": {
+        "x": 122,
+        "y": 48,
+        "w": 32,
+        "h": 32
+      }
+    },
+    "palette-button-hover": {
+      "bounds": {
+        "x": 122,
+        "y": 80,
+        "w": 32,
+        "h": 32
+      }
+    },
+    "sidebar-top": {
+      "bounds": {
+        "x": 52,
+        "y": 48,
+        "w": 31,
+        "h": 35
+      }
+    },
+    "sidebar-corner": {
+      "bounds": {
+        "x": 83,
+        "y": 48,
+        "w": 39,
+        "h": 39
+      }
+    },
+    "sidebar-right": {
+      "bounds": {
+        "x": 87,
+        "y": 87,
+        "w": 35,
+        "h": 31
+      }
+    },
+    "palette-button-open": {
+      "bounds": {
+        "x": 154,
+        "y": 48,
+        "w": 32,
+        "h": 32
+      }
+    },
+    "palette-button-open-hover": {
+      "bounds": {
+        "x": 154,
+        "y": 80,
+        "w": 32,
+        "h": 32
+      }
+    },
+    "erase-button": {
+      "bounds": {
+        "x": 144,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "erase-button-hover": {
+      "bounds": {
+        "x": 144,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "erase-button-active": {
+      "bounds": {
+        "x": 168,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "erase-button-active-hover": {
+      "bounds": {
+        "x": 168,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "save-button": {
+      "bounds": {
+        "x": 192,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "load-button": {
+      "bounds": {
+        "x": 216,
+        "y": 0,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "save-button-hover": {
+      "bounds": {
+        "x": 192,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "load-button-hover": {
+      "bounds": {
+        "x": 216,
+        "y": 24,
+        "w": 24,
+        "h": 24
+      }
+    },
+    "palette-background": {
+      "bounds": {
+        "x": 186,
+        "y": 48,
+        "w": 24,
+        "h": 24
+      },
+      "center": {
+        "x": 6,
+        "y": 6,
+        "w": 12,
+        "h": 12
+      }
+    },
+    "menu-background": {
+      "bounds": {
+        "x": 186,
+        "y": 72,
+        "w": 24,
+        "h": 24
+      },
+      "center": {
+        "x": 6,
+        "y": 6,
+        "w": 12,
+        "h": 12
+      }
+    },
+    "menu-close-button": {
+      "bounds": {
+        "x": 186,
+        "y": 96,
+        "w": 13,
+        "h": 13
+      }
+    },
+    "menu-close-button-hover": {
+      "bounds": {
+        "x": 199,
+        "y": 96,
+        "w": 13,
+        "h": 13
+      }
+    }
+  }
+}

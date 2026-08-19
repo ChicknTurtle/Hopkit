@@ -1,5 +1,6 @@
 
 import { Game } from "./game.js"
+import { Spritesheets } from "./spritesheets.js"
 import { AudioPlayer } from "./audio.js"
 
 export const Assets = {}
@@ -8,7 +9,7 @@ Assets.load = async function() {
   Game.loading = [0,0];
   await Assets.loadAssets([
     { type:'json', name:'manifest', src:'package.json' },
-    { type:'texture', name:'editor', src:'assets/textures/editor.png' },
+    { type:'spritesheet', name:'ui', src:'assets/textures/ui' },
     { type:'texture', name:'tiles', src:'assets/textures/tiles.png' },
     { type:'texture', name:'player', src:'assets/textures/player.png' },
     { type:'texture', name:'entities', src:'assets/textures/entities.png' },
@@ -38,6 +39,10 @@ Assets.loadTexture = function(name, src) {
     }
     img.onerror = reject;
   });
+}
+
+Assets.loadSpritesheet = async function(name, basePath) {
+  return await Spritesheets.load(basePath, name);
 }
 
 Assets.loadFont = function(name, src) {
@@ -76,6 +81,9 @@ Assets.loadAssets = async function(assetList) {
     switch (asset.type) {
       case 'texture':
         loader = Assets.loadTexture(asset.name, asset.src);
+        break;
+      case 'spritesheet':
+        loader = Assets.loadSpritesheet(asset.name, asset.src);
         break;
       case 'font':
         loader = Assets.loadFont(asset.name, asset.src);

@@ -2,22 +2,143 @@
 import { Vec2 } from "../utils/lib.js"
 import { Game } from "./../game.js"
 import { Controls } from "./../controls.js"
+import { InputManager } from "./../inputs.js"
 import { EventBus } from "./../core/eventBus.js"
 import { StateManager } from "./../core/stateManager.js"
 import { Elements } from "./elements.js"
 import { Editor } from "../states/editor.js"
 import { World } from "./../world/world.js"
+import { WorldUtils } from "./../world/utils.js"
 import { WorldIO } from "./../world/io.js"
+import { AudioPlayer } from "./../audio.js"
 import { Text } from "./../text.js"
 import { UI } from "./ui.js"
-import { drawNineSlice } from "../utils/rendering.js"
+import { Spritesheets } from "../spritesheets.js"
 import { CustomPopup } from "./../custom_popup.js"
 
 export const EditorElements = {}
 
+EditorElements.CanvasPaintArea = class extends Elements.Element {
+  constructor() {
+    super(new Vec2(0, Editor.SIDEBAR_HEIGHT), new Vec2(0, 0));
+    this.anchor = new Vec2(0, 0);
+    this.pivot = new Vec2(0, 0);
+    this.z = -100;
+    this.hover = false;
+  }
+  updateHover(to) {
+    this.hover = !!to;
+  }
+  tick() {
+    super.tick();
+    const sidebarWidth = Editor.viewingPalette ? Editor.SIDEBAR_WIDTH + Editor.PALETTE_WIDTH : Editor.SIDEBAR_WIDTH;
+    this.size.x = Math.max(0, Game.canvas.width*(1/Game.dpr) - sidebarWidth);
+    this.size.y = Math.max(0, Game.canvas.height*(1/Game.dpr) - Editor.SIDEBAR_HEIGHT);
+    this.screenPos = this.getScreenPos();
+
+    if (Editor.hasPopup || !this.hover) {
+      if (InputManager.inputsReleased['Mouse0'] || InputManager.inputsReleased['Mouse1']) {
+        Editor.EditHistory.endStroke();
+      }
+      return;
+    }
+
+    // pan
+    if (InputManager.inputs['Mouse2'] || InputManager.inputsClicked['Mouse2']) {
+      EventBus.emit('editor:pan', { delta: Game.mouseVel.divided(World.cam.zoom) });
+    }
+    if (InputManager.inputsClicked['pan']) {
+      EventBus.emit('editor:pan', { delta: InputManager.inputsClicked['pan'] });
+    }
+    // zoom
+    if (InputManager.inputsClicked['scroll']) {
+      EventBus.emit('editor:zoom', { amount: InputManager.inputsClicked['scroll'], pos: Game.mousePos });
+    }
+
+    if (InputManager.inputsClicked['Mouse0'] || InputManager.inputsClicked['Mouse1']) {
+      Editor.EditHistory.beginStroke();
+    }
+
+    // paint/erase
+    const prevMousePos = Game.prevMousePos ?? Game.mousePos;
+    if (Game.mousePos && (InputManager.inputs['Mouse0'] || InputManager.inputsClicked['Mouse0'] || InputManager.inputs['Mouse1'] || InputManager.inputsClicked['Mouse1'])) {
+      if (Editor.erasing) {
+        let didChange = false;
+        WorldUtils.getIntersectingTiles(WorldUtils.getGamePos(prevMousePos), WorldUtils.getGamePos(Game.mousePos)).forEach(tilepos => {
+          Object.values(World.layers).forEach(layer => {
+            didChange = Editor.setTileAt(tilepos, layer, null) || didChange;
+          });
+        });
+        if (didChange) { AudioPlayer.playSound('ui.remove_tile'); }
+      } else {
+        let didChange = false;
+        WorldUtils.getIntersectingTiles(WorldUtils.getGamePos(prevMousePos), WorldUtils.getGamePos(Game.mousePos)).forEach(tilepos => {
+          didChange = Editor.setTileAt(tilepos, World.tileInfo[Editor.selectedTile.id]?.layer ?? 0, Editor.selectedTile.id) || didChange;
+        });
+        if (didChange) { AudioPlayer.playSound('ui.place_tile'); }
+      }
+      Editor.unsavedChanges = true;
+    }
+
+    if (InputManager.inputsReleased['Mouse0'] || InputManager.inputsReleased['Mouse1']) {
+      Editor.EditHistory.endStroke();
+      Editor.moveHotbarIndexToFront(Editor.selectedHotbarIndex);
+    }
+  }
+  draw(ctx) {
+  }
+}
+
+EditorElements.Sidebar = class extends Elements.Element {
+  constructor() {
+    super(new Vec2(0, Editor.SIDEBAR_HEIGHT), new Vec2(Editor.SIDEBAR_WIDTH, 0));
+    this.anchor = new Vec2(1, 0);
+    this.pivot = new Vec2(1, 0);
+    this.z = -1;
+  }
+  updateHover(to) {
+  }
+  tick() {
+    super.tick();
+    this.size.y = Game.canvas.height*(1/Game.dpr) - Editor.SIDEBAR_HEIGHT;
+    this.screenPos = this.getScreenPos();
+  }
+  draw(ctx) {
+    ctx.imageSmoothingEnabled = false;
+    const pos = this.getScreenPos();
+    ctx.globalAlpha = 0.5
+    Spritesheets.drawExact(ctx, 'ui', 'sidebar-right', pos.x, pos.y + 8, this.size.x, this.size.y - 8);
+    ctx.globalAlpha = 1
+  }
+}
+
+EditorElements.TopBar = class extends Elements.Element {
+  constructor() {
+    super(new Vec2(0, 0), new Vec2(0, Editor.SIDEBAR_HEIGHT));
+    this.anchor = new Vec2(0, 0);
+    this.pivot = new Vec2(0, 0);
+    this.z = -1;
+  }
+  updateHover(to) {
+  }
+  tick() {
+    super.tick();
+    this.size.x = Game.canvas.width*(1/Game.dpr);
+    this.screenPos = this.getScreenPos();
+  }
+  draw(ctx) {
+    ctx.imageSmoothingEnabled = false;
+    const pos = this.getScreenPos();
+    ctx.globalAlpha = 0.5
+    Spritesheets.drawExact(ctx, 'ui', 'sidebar-corner', this.size.x - 78, 0, 78, 78);
+    Spritesheets.drawExact(ctx, 'ui', 'sidebar-top', pos.x, pos.y, this.size.x - 78, this.size.y);
+    ctx.globalAlpha = 1
+  }
+}
+
 EditorElements.EraseButton = class extends Elements.Button {
   constructor() {
-    super(new Vec2(-11,190), new Vec2(52,52));
+    super(new Vec2(-9,190), new Vec2(48,48));
     this.anchor = new Vec2(1,0);
     this.pivot = new Vec2(1,0);
     this.onClick = () => {
@@ -27,24 +148,27 @@ EditorElements.EraseButton = class extends Elements.Button {
   draw(ctx) {
     ctx.imageSmoothingEnabled = false;
     const pos = this.getScreenPos();
-    // button
     if (Editor.erasing) {
-      ctx.drawImage(Game.textures['editor'], 52, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
-    } else if (this.hover) {
-      ctx.drawImage(Game.textures['editor'], 26, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+      if (this.hover) {
+        Spritesheets.drawExact(ctx, 'ui', 'erase-button-active-hover', pos.x, pos.y, this.size.x, this.size.y);
+      } else {
+        Spritesheets.drawExact(ctx, 'ui', 'erase-button-active', pos.x, pos.y, this.size.x, this.size.y);
+      }
     } else {
-      ctx.drawImage(Game.textures['editor'], 0, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+      if (this.hover) {
+        Spritesheets.drawExact(ctx, 'ui', 'erase-button-hover', pos.x, pos.y, this.size.x, this.size.y);
+      } else {
+        Spritesheets.drawExact(ctx, 'ui', 'erase-button', pos.x, pos.y, this.size.x, this.size.y);
+      }
     }
-    // icon
-    ctx.drawImage(Game.textures['editor'], 0, 52, 15, 15, pos.x+11, pos.y+11, 30, 30);
   }
 }
 
 EditorElements.SaveButton = class extends Elements.Button {
   constructor() {
-    super(new Vec2(-11,250), new Vec2(52,52));
-    this.anchor = new Vec2(1,0);
-    this.pivot = new Vec2(1,0);
+    super(new Vec2(-9,-120), new Vec2(48,48));
+    this.anchor = new Vec2(1,1);
+    this.pivot = new Vec2(1,1);
     this.onClick = () => {
       const code = WorldIO.getLevelCode();
       CustomPopup.show({
@@ -78,24 +202,19 @@ EditorElements.SaveButton = class extends Elements.Button {
   draw(ctx) {
     ctx.imageSmoothingEnabled = false;
     const pos = this.getScreenPos();
-    // button
-    if (this.hover && Controls.held['leftMouse']) {
-      ctx.drawImage(Game.textures['editor'], 52, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
-    } else if (this.hover) {
-      ctx.drawImage(Game.textures['editor'], 26, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+    if (this.hover) {
+      Spritesheets.drawExact(ctx, 'ui', 'save-button-hover', pos.x, pos.y, this.size.x, this.size.y);
     } else {
-      ctx.drawImage(Game.textures['editor'], 0, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'save-button', pos.x, pos.y, this.size.x, this.size.y);
     }
-    // icon
-    ctx.drawImage(Game.textures['editor'], 15, 52, 15, 15, pos.x+11, pos.y+11, 30, 30);
   }
 }
 
 EditorElements.LoadButton = class extends Elements.Button {
   constructor() {
-    super(new Vec2(-11,310), new Vec2(52,52));
-    this.anchor = new Vec2(1,0);
-    this.pivot = new Vec2(1,0);
+    super(new Vec2(-9,-70), new Vec2(48,48));
+    this.anchor = new Vec2(1,1);
+    this.pivot = new Vec2(1,1);
     this.onClick = () => {
       CustomPopup.show({
         title: "Load Level",
@@ -120,24 +239,19 @@ EditorElements.LoadButton = class extends Elements.Button {
   draw(ctx) {
     ctx.imageSmoothingEnabled = false;
     const pos = this.getScreenPos();
-    // button
-    if (this.hover && Controls.held['leftMouse']) {
-      ctx.drawImage(Game.textures['editor'], 52, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
-    } else if (this.hover) {
-      ctx.drawImage(Game.textures['editor'], 26, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+    if (this.hover) {
+      Spritesheets.drawExact(ctx, 'ui', 'load-button-hover', pos.x, pos.y, this.size.x, this.size.y);
     } else {
-      ctx.drawImage(Game.textures['editor'], 0, 26, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'load-button', pos.x, pos.y, this.size.x, this.size.y);
     }
-    // icon
-    ctx.drawImage(Game.textures['editor'], 30, 52, 15, 15, pos.x+11, pos.y+11, 30, 30);
   }
 }
 
 EditorElements.UndoButton = class extends Elements.Button {
   constructor() {
-    super(new Vec2(-11,-143), new Vec2(52,52));
-    this.anchor = new Vec2(1,1);
-    this.pivot = new Vec2(1,1);
+    super(new Vec2(-9,250), new Vec2(48,48));
+    this.anchor = new Vec2(1,0);
+    this.pivot = new Vec2(1,0);
     this.onClick = () => {
       Editor.EditHistory.undo();
     }
@@ -147,18 +261,18 @@ EditorElements.UndoButton = class extends Elements.Button {
     const pos = this.getScreenPos();
     // button
     if (this.hover) {
-      ctx.drawImage(Game.textures['editor'], 79, 100, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'undo-button-hover', pos.x, pos.y, this.size.x, this.size.y);
     } else {
-      ctx.drawImage(Game.textures['editor'], 79, 75, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'undo-button', pos.x, pos.y, this.size.x, this.size.y);
     }
   }
 }
 
 EditorElements.RedoButton = class extends Elements.Button {
   constructor() {
-    super(new Vec2(-11,-83), new Vec2(52,52));
-    this.anchor = new Vec2(1,1);
-    this.pivot = new Vec2(1,1);
+    super(new Vec2(-9,300), new Vec2(48,48));
+    this.anchor = new Vec2(1,0);
+    this.pivot = new Vec2(1,0);
     this.onClick = () => {
       Editor.EditHistory.redo();
     }
@@ -168,9 +282,9 @@ EditorElements.RedoButton = class extends Elements.Button {
     const pos = this.getScreenPos();
     // button
     if (this.hover) {
-      ctx.drawImage(Game.textures['editor'], 104, 100, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'redo-button-hover', pos.x, pos.y, this.size.x, this.size.y);
     } else {
-      ctx.drawImage(Game.textures['editor'], 104, 75, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'redo-button', pos.x, pos.y, this.size.x, this.size.y);
     }
   }
 }
@@ -185,16 +299,16 @@ EditorElements.BackButton = class extends Elements.Button {
     ctx.imageSmoothingEnabled = false;
     const pos = this.getScreenPos();
     if (this.hover) {
-      ctx.drawImage(Game.textures['editor'], 79, 25, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'back-button-hover', pos.x, pos.y, this.size.x, this.size.y);
     } else {
-      ctx.drawImage(Game.textures['editor'], 79, 0, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'back-button', pos.x, pos.y, this.size.x, this.size.y);
     }
   }
 }
 
 EditorElements.PlayButton = class extends Elements.Button {
   constructor(onClick=null) {
-    super(new Vec2(-11,-11), new Vec2(52,52), onClick);
+    super(new Vec2(-9,-11), new Vec2(48,48), onClick);
     this.anchor = new Vec2(1,1);
     this.pivot = new Vec2(1,1);
   }
@@ -203,15 +317,15 @@ EditorElements.PlayButton = class extends Elements.Button {
     const pos = this.getScreenPos();
     if (StateManager.current === 'editor_gameplay') {
       if (this.hover) {
-        ctx.drawImage(Game.textures['editor'], 129, 25, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+        Spritesheets.drawExact(ctx, 'ui', 'stop-button-hover', pos.x, pos.y, this.size.x, this.size.y);
       } else {
-        ctx.drawImage(Game.textures['editor'], 129, 0, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+        Spritesheets.drawExact(ctx, 'ui', 'stop-button', pos.x, pos.y, this.size.x, this.size.y);
       }
     } else {
       if (this.hover) {
-        ctx.drawImage(Game.textures['editor'], 104, 25, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+        Spritesheets.drawExact(ctx, 'ui', 'play-button-hover', pos.x, pos.y, this.size.x, this.size.y);
       } else {
-        ctx.drawImage(Game.textures['editor'], 104, 0, 24, 24, pos.x, pos.y, this.size.x, this.size.y);
+        Spritesheets.drawExact(ctx, 'ui', 'play-button', pos.x, pos.y, this.size.x, this.size.y);
       }
     }
   }
@@ -234,11 +348,11 @@ EditorElements.HotbarIcon = class extends Elements.Button {
     const pos = this.getScreenPos();
     // box
     if (Editor.selectedHotbarIndex === this.index) {
-      ctx.drawImage(Game.textures['editor'], 52, 0, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'hotbar-icon-selected', pos.x, pos.y, this.size.x, this.size.y);
     } else if (this.hover) {
-      ctx.drawImage(Game.textures['editor'], 26, 0, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'hotbar-icon-hover', pos.x, pos.y, this.size.x, this.size.y);
     } else {
-      ctx.drawImage(Game.textures['editor'], 0, 0, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'hotbar-icon', pos.x, pos.y, this.size.x, this.size.y);
     }
     // icon
     const tile = Editor.hotbar[this.index];
@@ -258,7 +372,7 @@ EditorElements.HotbarIcon = class extends Elements.Button {
       ctx.font = `${this.size.y*0.5}px Pixellari`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
-      const digit = this.index === 9 ? '0' : this.index+1;
+      const digit = this.index === 0 ? '0' : 10-this.index;
       Text.parse(`<shadow:2,2,black>${digit}`).draw(ctx, pos.plus(new Vec2(-4,this.size.y+4)))
     }
   }
@@ -266,24 +380,24 @@ EditorElements.HotbarIcon = class extends Elements.Button {
 
 EditorElements.PaletteButton = class extends Elements.Button {
   constructor(onClick=null) {
-    super(new Vec2(-12,10), new Vec2(54,54), onClick);
+    super(new Vec2(-9,9), new Vec2(48,48), onClick);
     this.anchor = new Vec2(1,0);
     this.pivot = new Vec2(1,0);
   }
   draw(ctx) {
     ctx.imageSmoothingEnabled = false;
-    const pos = this.getScreenPos();
+    const pos = this.getScreenPos().add(new Vec2(-8,-8));
     if (Editor.viewingPalette) {
       if (this.hover) {
-        ctx.drawImage(Game.textures['editor'], 182, 28, 27, 27, pos.x, pos.y, this.size.x, this.size.y);
+        Spritesheets.drawExact(ctx, 'ui', 'palette-button-open-hover', pos.x, pos.y, 64, 64);
       } else {
-        ctx.drawImage(Game.textures['editor'], 182, 0, 27, 27, pos.x, pos.y, this.size.x, this.size.y);
+        Spritesheets.drawExact(ctx, 'ui', 'palette-button-open', pos.x, pos.y, 64, 64);
       }
     } else {
       if (this.hover) {
-        ctx.drawImage(Game.textures['editor'], 154, 28, 27, 27, pos.x, pos.y, this.size.x, this.size.y);
+        Spritesheets.drawExact(ctx, 'ui', 'palette-button-hover', pos.x, pos.y, 64, 64);
       } else {
-        ctx.drawImage(Game.textures['editor'], 154, 0, 27, 27, pos.x, pos.y, this.size.x, this.size.y);
+        Spritesheets.drawExact(ctx, 'ui', 'palette-button', pos.x, pos.y, 64, 64);
       }
     }
   }
@@ -314,88 +428,7 @@ EditorElements.PaletteBackground = class extends Elements.Element {
   }
   draw(ctx) {
     const pos = this.getScreenPos();
-    drawNineSlice(ctx, Game.textures['editor'], 24, 24, [4,4,4,4], pos.x, pos.y, this.size.x, this.size.y, 157, 56, 2);
-  }
-}
-
-EditorElements.Popup = class extends Elements.Element {
-  constructor() {
-    super(new Vec2(0,0), new Vec2(400,300));
-    this.anchor = new Vec2(0.5,0.5);
-    this.pivot = new Vec2(0.5,0.5);
-    this.z = 100;
-  }
-  tick() {
-    super.tick();
-    if (!Editor.hasPopup) {
-      UI.managers.editor.destroy('PopupBackground');
-      UI.managers.editor.destroy('PopupCloseButton');
-      UI.managers.editor.destroy(this);
-      return;
-    }
-    UI.managers.editor.show('PopupBackground', () =>
-      new Elements.Background()
-    );
-    UI.managers.editor.get('PopupBackground').z = 99;
-    UI.managers.editor.show('PopupCloseButton', () =>
-      new EditorElements.PopupCloseButton()
-    );
-    if (Controls.clicked('exitMenu')) {
-      Editor.hasPopup = false;
-    }
-  }
-  draw(ctx) {
-    ctx.imageSmoothingEnabled = false;
-    const pos = this.getScreenPos();
-    drawNineSlice(ctx, Game.textures['editor'], 24, 24, [4,4,4,4], pos.x, pos.y, this.size.x, this.size.y, 185, 56, 2);
-  }
-}
-
-EditorElements.PopupCloseButton = class extends Elements.Button {
-  constructor() {
-    super(new Vec2(-400/2+6, -300/2+6), new Vec2(26,26));
-    this.anchor = new Vec2(0.5,0.5);
-    this.pivot = new Vec2(0,0);
-    this.z = 101;
-    this.onClick = () => {
-      Editor.hasPopup = false;
-    }
-  }
-  draw(ctx) {
-    ctx.imageSmoothingEnabled = false;
-    const pos = this.getScreenPos();
-    if (this.hover) {
-      ctx.drawImage(Game.textures['editor'], 210, 70, 13, 13, pos.x, pos.y, this.size.x, this.size.y);
-    } else {
-      ctx.drawImage(Game.textures['editor'], 210, 56, 13, 13, pos.x, pos.y, this.size.x, this.size.y);
-    }
-  }
-}
-
-EditorElements.PopupButton = class extends Elements.Button {
-  constructor(pos=new Vec2(), text='Button', onClick=null) {
-    super(pos, new Vec2(200,50));
-    this.anchor = new Vec2(0.5,0.5);
-    this.pivot = new Vec2(0.5,0.5);
-    this.z = 101;
-    this.text = text;
-    this.onClick = onClick;
-  }
-  draw(ctx) {
-    ctx.imageSmoothingEnabled = false;
-    const pos = this.getScreenPos();
-    if (this.hover) {
-      drawNineSlice(ctx, Game.textures['editor'], 24, 24, [4,4,4,4], pos.x, pos.y, this.size.x, this.size.y, 104, 50, 2);
-    } else {
-      drawNineSlice(ctx, Game.textures['editor'], 24, 24, [4,4,4,4], pos.x, pos.y, this.size.x, this.size.y, 79, 50, 2);
-    }
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '24px Pixellari';
-    const text = new Text.Component(this.text);
-    text.effects.shadowColor = 'black';
-    text.effects.shadowOffset = new Vec2(2,2);
-    Text.draw(ctx, text, pos.plus(this.size.times(0.5)));
+    Spritesheets.drawNineSlice(ctx, 'ui', 'palette-background', pos.x, pos.y, this.size.x, this.size.y, 2)
   }
 }
 
@@ -434,9 +467,9 @@ EditorElements.PaletteMenuButton = class extends Elements.Button {
     const pos = this.getScreenPos();
     // box
     if (this.hover) {
-      ctx.drawImage(Game.textures['editor'], 26, 0, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'hotbar-icon-hover', pos.x, pos.y, this.size.x, this.size.y);
     } else {
-      ctx.drawImage(Game.textures['editor'], 0, 0, 26, 26, pos.x, pos.y, this.size.x, this.size.y);
+      Spritesheets.drawExact(ctx, 'ui', 'hotbar-icon', pos.x, pos.y, this.size.x, this.size.y);
     }
     // icon
     if (this.tile.type === 'tile') {
